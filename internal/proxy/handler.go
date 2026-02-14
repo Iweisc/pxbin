@@ -13,7 +13,6 @@ import (
 // Handler contains the shared dependencies for the Anthropic and OpenAI proxy
 // endpoints.
 type Handler struct {
-	upstream   *UpstreamClient // fallback from config.yaml
 	clients    *ClientCache
 	modelCache *ModelCache
 	store      *store.Store
@@ -21,11 +20,10 @@ type Handler struct {
 	billing    *billing.Tracker
 }
 
-// NewHandler creates a Handler wired up to an upstream, client cache, model
-// cache, store, logger and billing tracker.
-func NewHandler(upstream *UpstreamClient, clients *ClientCache, modelCache *ModelCache, s *store.Store, logger *logging.AsyncLogger, billing *billing.Tracker) *Handler {
+// NewHandler creates a Handler wired up to a client cache, model cache, store,
+// logger and billing tracker.
+func NewHandler(clients *ClientCache, modelCache *ModelCache, s *store.Store, logger *logging.AsyncLogger, billing *billing.Tracker) *Handler {
 	return &Handler{
-		upstream:   upstream,
 		clients:    clients,
 		modelCache: modelCache,
 		store:      s,

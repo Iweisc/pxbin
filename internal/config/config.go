@@ -12,8 +12,6 @@ import (
 type Config struct {
 	ListenAddr             string   `yaml:"listen_addr"`
 	DatabaseURL            string   `yaml:"database_url"`
-	UpstreamBaseURL        string   `yaml:"upstream_base_url"`
-	UpstreamAPIKey         string   `yaml:"upstream_api_key"`
 	LogBufferSize          int      `yaml:"log_buffer_size"`
 	ManagementBootstrapKey string   `yaml:"management_bootstrap_key"`
 	CORSOrigins            []string `yaml:"cors_origins"`
@@ -47,12 +45,6 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("PXBIN_DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
-	}
-	if v := os.Getenv("PXBIN_UPSTREAM_BASE_URL"); v != "" {
-		cfg.UpstreamBaseURL = v
-	}
-	if v := os.Getenv("PXBIN_UPSTREAM_API_KEY"); v != "" {
-		cfg.UpstreamAPIKey = v
 	}
 	if v := os.Getenv("PXBIN_LOG_BUFFER_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

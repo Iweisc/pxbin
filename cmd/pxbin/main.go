@@ -46,9 +46,6 @@ func main() {
 	asyncLogger := logging.NewAsyncLogger(st, cfg.LogBufferSize)
 	defer asyncLogger.Close()
 
-	// Initialize upstream client
-	upstreamClient := proxy.NewUpstreamClient(cfg.UpstreamBaseURL, cfg.UpstreamAPIKey)
-
 	// Initialize client cache for per-upstream connections
 	clientCache := proxy.NewClientCache()
 
@@ -56,7 +53,7 @@ func main() {
 	modelCache := proxy.NewModelCache(st, 60*time.Second)
 
 	// Initialize proxy handler
-	proxyHandler := proxy.NewHandler(upstreamClient, clientCache, modelCache, st, asyncLogger, billingTracker)
+	proxyHandler := proxy.NewHandler(clientCache, modelCache, st, asyncLogger, billingTracker)
 
 	// Initialize auth key cache and last-used tracker
 	keyCache := auth.NewKeyCache(st, 60*time.Second)

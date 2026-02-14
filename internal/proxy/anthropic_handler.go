@@ -18,19 +18,18 @@ import (
 
 // resolveUpstream looks up the model's linked upstream from the DB. If found,
 // it returns a cached UpstreamClient and the upstream's format. If the model
-// has no linked upstream, it falls back to the config-level upstream with an
-// empty format string — the caller decides what the default means.
+// has no linked upstream, it returns an error — all upstreams must be
+// configured via the management API.
 func (h *Handler) resolveUpstream(ctx context.Context, modelName string) (*UpstreamClient, string, error) {
 	mw, err := h.modelCache.GetModelWithUpstream(ctx, modelName)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve upstream: %w", err)
 	}
-	if mw != nil {
-		client := h.clients.Get(*mw.UpstreamID, mw.UpstreamBaseURL, mw.UpstreamAPIKey)
-		return client, mw.UpstreamFormat, nil
+	if mw == nil {
+		return nil, "", fmt.Errorf("no upstream configured for model %q", modelName)
 	}
-	// Fallback: config-level upstream, empty format = caller decides default.
-	return h.upstream, "", nil
+	client := h.clients.Get(*mw.UpstreamID, mw.UpstreamBaseURL, mw.UpstreamAPIKey)
+	return client, mw.UpstreamFormat, nil
 }
 
 // HandleAnthropic proxies Anthropic /v1/messages requests. Depending on the
