@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pxbin
+      POSTGRES_PASSWORD: pxbin
+      POSTGRES_DB: pxbin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pxbin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pxbin:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PXBIN_DATABASE_URL: "postgres://pxbin:pxbin@postgres:5432/pxbin?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

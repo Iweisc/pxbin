@@ -1,0 +1,34 @@
+# Go
+bin/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cover.out
+coverage.html
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Config overrides (keep default config.yaml)
+config.local.yaml

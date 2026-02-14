@@ -1,0 +1,27 @@
+# pxbin configuration
+
+# Address to listen on
+listen_addr: ":8080"
+
+# PostgreSQL connection string
+database_url: "postgres://pxbin:pxbin@localhost:5432/pxbin?sslmode=disable"
+
+# Upstream LLM provider base URL (e.g. Anthropic API)
+upstream_base_url: "https://aiproxy.usw.sealos.io"
+
+# Upstream API key (prefer PXBIN_UPSTREAM_API_KEY env var)
+upstream_api_key: "sk-n2cV4S5ti02gnrNX5xhwQi8xUlFXgjfmsYKaZCYW8RIKts6x"
+
+# Async log buffer size (number of entries buffered before flush)
+log_buffer_size: 10000
+
+# Bootstrap key for initial management API access (prefer PXBIN_MANAGEMENT_BOOTSTRAP_KEY env var)
+management_bootstrap_key: "pxbin-bootstrap-secret"
+
+# CORS allowed origins
+cors_origins:
+  - "http://localhost:5173"
+  - "http://localhost:3000"
+
+# AES-256 encryption key for storing API keys at rest (prefer PXBIN_ENCRYPTION_KEY env var)
+encryption_key: ""
