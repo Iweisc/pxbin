@@ -167,6 +167,15 @@ func (s *Store) UpdateLLMKeyLastUsed(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *Store) BatchUpdateLLMKeyLastUsed(ctx context.Context, ids []uuid.UUID) error {
+	_, err := s.pool.Exec(ctx,
+		"UPDATE llm_api_keys SET last_used_at = now() WHERE id = ANY($1)", ids)
+	if err != nil {
+		return fmt.Errorf("batch update llm key last used: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) GetManagementKeyByHash(ctx context.Context, hash string) (*ManagementAPIKey, error) {
 	var k ManagementAPIKey
 	err := s.pool.QueryRow(ctx, `

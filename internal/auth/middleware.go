@@ -47,7 +47,7 @@ func GetManagementKeyFromContext(ctx context.Context) *store.ManagementAPIKey {
 	return nil
 }
 
-func LLMAuthMiddleware(s *store.Store) func(http.Handler) http.Handler {
+func LLMAuthMiddleware(cache *KeyCache, tracker *LastUsedTracker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := extractAPIKey(r)
@@ -57,7 +57,7 @@ func LLMAuthMiddleware(s *store.Store) func(http.Handler) http.Handler {
 			}
 
 			hash := HashKey(key)
-			record, err := s.GetLLMKeyByHash(r.Context(), hash)
+			record, err := cache.GetLLMKeyByHash(r.Context(), hash)
 			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, "Internal server error")
 				return
@@ -71,11 +71,10 @@ func LLMAuthMiddleware(s *store.Store) func(http.Handler) http.Handler {
 				return
 			}
 
-			go func() {
-				_ = s.UpdateLLMKeyLastUsed(context.Background(), record.ID)
-			}()
+			tracker.Touch(record.ID)
 
-			ctx := context.WithValue(r.Context(), ctxKeyLLMKeyID, record.ID)
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, ctxKeyLLMKeyID, record.ID)
 			ctx = context.WithValue(ctx, ctxKeyLLMKey, record)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

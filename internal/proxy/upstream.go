@@ -25,6 +25,7 @@ func NewUpstreamClient(baseURL, apiKey string) *UpstreamClient {
 		MaxConnsPerHost:     0, // unlimited
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
+		DisableCompression:  true, // avoid unnecessary decompress/recompress for passthrough
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,

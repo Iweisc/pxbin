@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,7 +21,7 @@ import (
 // has no linked upstream, it falls back to the config-level upstream with an
 // empty format string — the caller decides what the default means.
 func (h *Handler) resolveUpstream(ctx context.Context, modelName string) (*UpstreamClient, string, error) {
-	mw, err := h.store.GetModelWithUpstream(ctx, modelName)
+	mw, err := h.modelCache.GetModelWithUpstream(ctx, modelName)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve upstream: %w", err)
 	}
@@ -335,6 +334,8 @@ type streamUsage struct {
 	CacheReadTokens     int
 }
 
+var newline = []byte("\n")
+
 // passthroughAnthropicStream forwards Anthropic SSE events to the client
 // while extracting usage information from message_start and message_delta events.
 func passthroughAnthropicStream(upstream io.Reader, w http.ResponseWriter, flusher http.Flusher) streamUsage {
@@ -344,41 +345,44 @@ func passthroughAnthropicStream(upstream io.Reader, w http.ResponseWriter, flush
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := scanner.Bytes()
 
 		// Pass every line through as-is.
-		fmt.Fprintf(w, "%s\n", line)
+		w.Write(line)
+		w.Write(newline)
 
 		// Flush on empty lines (SSE event boundary).
-		if line == "" {
+		if len(line) == 0 {
 			flusher.Flush()
 			continue
 		}
 
-		// Extract usage from data lines.
-		if !strings.HasPrefix(line, "data: ") {
+		// Only inspect data lines that might contain usage info.
+		// Cheap byte prefix check avoids JSON parsing on most lines.
+		if !bytes.HasPrefix(line, []byte("data: ")) {
 			continue
 		}
 		data := line[6:]
 
-		// Try to extract usage from message_start.
-		var msgStart translate.MessageStartEvent
-		if json.Unmarshal([]byte(data), &msgStart) == nil && msgStart.Type == "message_start" {
-			usage.InputTokens = msgStart.Message.Usage.InputTokens
-			usage.CacheCreationTokens = msgStart.Message.Usage.CacheCreationInputTokens
-			usage.CacheReadTokens = msgStart.Message.Usage.CacheReadInputTokens
-			continue
-		}
-
-		// Try to extract usage from message_delta.
-		var msgDelta struct {
-			Type  string `json:"type"`
-			Usage *struct {
-				OutputTokens int `json:"output_tokens"`
-			} `json:"usage"`
-		}
-		if json.Unmarshal([]byte(data), &msgDelta) == nil && msgDelta.Type == "message_delta" && msgDelta.Usage != nil {
-			usage.OutputTokens = msgDelta.Usage.OutputTokens
+		// Only parse the two event types that carry usage — skip content_block_delta,
+		// content_block_start, content_block_stop, ping, etc.
+		if bytes.Contains(data, []byte(`"message_start"`)) {
+			var msgStart translate.MessageStartEvent
+			if json.Unmarshal(data, &msgStart) == nil && msgStart.Type == "message_start" {
+				usage.InputTokens = msgStart.Message.Usage.InputTokens
+				usage.CacheCreationTokens = msgStart.Message.Usage.CacheCreationInputTokens
+				usage.CacheReadTokens = msgStart.Message.Usage.CacheReadInputTokens
+			}
+		} else if bytes.Contains(data, []byte(`"message_delta"`)) {
+			var msgDelta struct {
+				Type  string `json:"type"`
+				Usage *struct {
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
+			}
+			if json.Unmarshal(data, &msgDelta) == nil && msgDelta.Type == "message_delta" && msgDelta.Usage != nil {
+				usage.OutputTokens = msgDelta.Usage.OutputTokens
+			}
 		}
 	}
 

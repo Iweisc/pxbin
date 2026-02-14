@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -46,7 +47,7 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the request body to the upstream unchanged.
-	upstreamResp, err := client.Do(r.Context(), r.Method, "/v1/chat/completions", strings.NewReader(string(body)), nil)
+	upstreamResp, err := client.Do(r.Context(), r.Method, "/v1/chat/completions", bytes.NewReader(body), nil)
 	if err != nil {
 		latency := time.Since(start)
 		h.logger.Log(&logging.LogEntry{
