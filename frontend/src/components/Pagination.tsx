@@ -20,24 +20,24 @@ export function Pagination({
   const to = Math.min(page * perPage, total);
 
   return (
-    <div className="flex items-center justify-between px-1 py-3">
-      <div className="text-xs text-zinc-500">
+    <div className="flex items-center justify-between px-1 py-2.5">
+      <div className="text-[10px] text-zinc-600 font-mono">
         {total > 0 ? (
           <>
-            {from}-{to} of {total}
+            {from}–{to} of {total}
           </>
         ) : (
           "0 results"
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <select
           value={perPage}
           onChange={(e) => {
             onPerPageChange(Number(e.target.value));
             onPageChange(1);
           }}
-          className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-2 py-1"
+          className="bg-zinc-900/80 border border-zinc-800/50 rounded-lg text-[10px] text-zinc-400 px-2 py-1 focus:outline-none focus:border-zinc-700"
         >
           {PER_PAGE_OPTIONS.map((n) => (
             <option key={n} value={n}>
@@ -45,11 +45,11 @@ export function Pagination({
             </option>
           ))}
         </select>
-        <div className="flex gap-1">
+        <div className="flex gap-0.5">
           <button
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
-            className="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-md text-zinc-300 transition-colors"
+            className="px-2.5 py-1 text-[10px] bg-zinc-900/80 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed rounded-md text-zinc-400 transition-all duration-150 border border-zinc-800/40"
           >
             Prev
           </button>
@@ -58,24 +58,24 @@ export function Pagination({
               <button
                 key={p}
                 onClick={() => onPageChange(p)}
-                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                className={`px-2.5 py-1 text-[10px] rounded-md transition-all duration-150 border ${
                   p === page
-                    ? "bg-zinc-700 text-zinc-100"
-                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                    ? "bg-zinc-700/80 text-zinc-100 border-zinc-700/60 shadow-sm"
+                    : "bg-zinc-900/80 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 border-zinc-800/40"
                 }`}
               >
                 {p}
               </button>
             ))
           ) : (
-            <span className="px-2 py-1 text-xs text-zinc-500">
+            <span className="px-2 py-1 text-[10px] text-zinc-600 font-mono">
               {page} / {totalPages}
             </span>
           )}
           <button
             onClick={() => onPageChange(page + 1)}
             disabled={page >= totalPages}
-            className="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-md text-zinc-300 transition-colors"
+            className="px-2.5 py-1 text-[10px] bg-zinc-900/80 hover:bg-zinc-800/60 disabled:opacity-30 disabled:cursor-not-allowed rounded-md text-zinc-400 transition-all duration-150 border border-zinc-800/40"
           >
             Next
           </button>

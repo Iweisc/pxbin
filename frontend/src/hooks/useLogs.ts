@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, apiFetchPaginated } from "../lib/api.ts";
-import type { PaginatedResponse, RequestLog } from "../lib/types.ts";
+import type { RequestLog } from "../lib/types.ts";
 
 interface LogFilters {
   page?: number;

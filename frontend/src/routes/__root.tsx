@@ -19,7 +19,7 @@ export function RootLayout() {
   return (
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100">
       <Sidebar />
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 px-6 py-5 overflow-auto">
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>

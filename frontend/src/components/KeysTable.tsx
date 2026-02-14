@@ -26,15 +26,15 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
       header: "Prefix",
       render: (k) => (
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs">{k.key_prefix}...</span>
+          <span className="font-mono text-xs text-zinc-300">{k.key_prefix}...</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
               navigator.clipboard.writeText(k.key_prefix);
             }}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-zinc-600 hover:text-zinc-400 transition-colors"
           >
-            <Copy size={12} />
+            <Copy size={11} />
           </button>
         </div>
       ),
@@ -42,20 +42,20 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
     {
       key: "name",
       header: "Name",
-      render: (k) => <span className="text-sm">{k.name}</span>,
+      render: (k) => <span className="text-xs text-zinc-200">{k.name}</span>,
     },
     {
       key: "created_at",
       header: "Created",
       render: (k) => (
-        <span className="text-xs text-zinc-400">{formatDate(k.created_at)}</span>
+        <span className="text-xs text-zinc-500 font-mono">{formatDate(k.created_at)}</span>
       ),
     },
     {
       key: "last_used_at",
       header: "Last Used",
       render: (k) => (
-        <span className="text-xs text-zinc-400">
+        <span className="text-xs text-zinc-500 font-mono">
           {k.last_used_at ? formatDate(k.last_used_at) : "Never"}
         </span>
       ),
@@ -65,9 +65,9 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
       header: "Status",
       render: (k) =>
         k.is_active ? (
-          <span className="text-xs font-medium text-emerald-400">Active</span>
+          <span className="text-[10px] font-medium text-emerald-400">Active</span>
         ) : (
-          <span className="text-xs font-medium text-zinc-500">Revoked</span>
+          <span className="text-[10px] font-medium text-zinc-600">Revoked</span>
         ),
     },
     {
@@ -82,7 +82,7 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
                   e.stopPropagation();
                   handleRevoke(k.id);
                 }}
-                className="text-xs text-red-400 hover:text-red-300 font-medium transition-colors"
+                className="text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
               >
                 Confirm
               </button>
@@ -91,7 +91,7 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
                   e.stopPropagation();
                   setConfirmId(null);
                 }}
-                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
               >
                 Cancel
               </button>
@@ -102,9 +102,9 @@ export function KeysTable({ data, isLoading }: KeysTableProps) {
                 e.stopPropagation();
                 setConfirmId(k.id);
               }}
-              className="text-zinc-500 hover:text-red-400 transition-colors"
+              className="text-zinc-600 hover:text-red-400 transition-colors"
             >
-              <Trash2 size={14} />
+              <Trash2 size={13} />
             </button>
           )
         ) : null,

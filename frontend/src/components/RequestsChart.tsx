@@ -1,16 +1,17 @@
 import {
   ResponsiveContainer,
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
 } from "recharts";
 import type { TimeSeriesBucket } from "../lib/types.ts";
-import { formatDate, formatTokens } from "../lib/utils.ts";
+import { formatDate } from "../lib/utils.ts";
 
-interface UsageChartProps {
+interface RequestsChartProps {
   data: TimeSeriesBucket[] | undefined;
   isLoading: boolean;
 }
@@ -23,17 +24,18 @@ const TOOLTIP_STYLE = {
   padding: "8px 12px",
 };
 
-export function UsageChart({ data, isLoading }: UsageChartProps) {
+export function RequestsChart({ data, isLoading }: RequestsChartProps) {
   if (isLoading) {
     return <ChartSkeleton />;
   }
 
   if (!data || data.length === 0) {
-    return <ChartEmpty label="No usage data" />;
+    return <ChartEmpty label="No request data" />;
   }
 
-  const totalInput = data.reduce((sum, d) => sum + d.input_tokens, 0);
-  const totalOutput = data.reduce((sum, d) => sum + d.output_tokens, 0);
+  const totalRequests = data.reduce((sum, d) => sum + d.requests, 0);
+  const totalErrors = data.reduce((sum, d) => sum + d.errors, 0);
+  const hasErrors = totalErrors > 0;
 
   return (
     <div
@@ -43,36 +45,44 @@ export function UsageChart({ data, isLoading }: UsageChartProps) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Token Usage
+            Requests
           </h3>
           <div className="flex items-center gap-3 text-[10px] text-zinc-600">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              Input
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+              Requests
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-              Output
-            </span>
+            {hasErrors && (
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                Errors
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2.5 text-[10px] font-mono">
-          <span className="text-blue-400">{formatTokens(totalInput)} in</span>
-          <span className="text-violet-400">
-            {formatTokens(totalOutput)} out
+        <div className="flex items-center gap-3 text-xs">
+          <span className="font-mono text-zinc-300">
+            {totalRequests.toLocaleString()}
           </span>
+          {hasErrors && (
+            <span className="font-mono text-red-400/80">
+              {totalErrors} err
+            </span>
+          )}
         </div>
       </div>
       <ResponsiveContainer width="100%" height={280}>
-        <AreaChart data={data}>
+        <ComposedChart data={data}>
           <defs>
-            <linearGradient id="inputGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.2} />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id="outputGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.2} />
-              <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+            <linearGradient
+              id="requestsGradient"
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.2} />
+              <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
@@ -90,42 +100,56 @@ export function UsageChart({ data, isLoading }: UsageChartProps) {
             tickLine={false}
           />
           <YAxis
-            tickFormatter={(v: number) => formatTokens(v)}
+            yAxisId="left"
+            tickFormatter={(v: number) => v.toLocaleString()}
             stroke="#3f3f46"
             fontSize={10}
             axisLine={false}
             tickLine={false}
             width={45}
           />
+          {hasErrors && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tickFormatter={(v: number) => v.toLocaleString()}
+              stroke="#3f3f46"
+              fontSize={10}
+              axisLine={false}
+              tickLine={false}
+              width={35}
+            />
+          )}
           <Tooltip
             contentStyle={TOOLTIP_STYLE}
             labelFormatter={(label) => formatDate(String(label))}
             formatter={(value, name) => [
-              formatTokens(Number(value) || 0),
-              name === "input_tokens" ? "Input" : "Output",
+              (Number(value) || 0).toLocaleString(),
+              name === "requests" ? "Requests" : "Errors",
             ]}
           />
           <Area
+            yAxisId="left"
             type="monotone"
-            dataKey="input_tokens"
-            stackId="tokens"
-            stroke="#3b82f6"
-            fill="url(#inputGradient)"
+            dataKey="requests"
+            stroke="#0ea5e9"
+            fill="url(#requestsGradient)"
             strokeWidth={1.5}
             dot={false}
-            activeDot={{ r: 3, fill: "#3b82f6" }}
+            activeDot={{ r: 3, fill: "#0ea5e9" }}
           />
-          <Area
-            type="monotone"
-            dataKey="output_tokens"
-            stackId="tokens"
-            stroke="#8b5cf6"
-            fill="url(#outputGradient)"
-            strokeWidth={1.5}
-            dot={false}
-            activeDot={{ r: 3, fill: "#8b5cf6" }}
-          />
-        </AreaChart>
+          {hasErrors && (
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="errors"
+              stroke="#ef4444"
+              strokeWidth={1.5}
+              dot={false}
+              activeDot={{ r: 3, fill: "#ef4444" }}
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

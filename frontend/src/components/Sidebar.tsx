@@ -25,14 +25,14 @@ export function Sidebar() {
   const matchRoute = useMatchRoute();
 
   return (
-    <aside className="flex flex-col w-56 min-h-screen bg-zinc-950 border-r border-zinc-800">
-      <div className="px-5 py-5 border-b border-zinc-800">
-        <span className="text-lg font-bold font-mono tracking-tight text-zinc-100">
+    <aside className="flex flex-col w-52 min-h-screen bg-zinc-950 border-r border-zinc-800/60">
+      <div className="px-5 py-4 border-b border-zinc-800/60">
+        <span className="text-base font-bold font-mono tracking-tight text-zinc-100">
           pxbin
         </span>
       </div>
 
-      <nav className="flex-1 py-3 px-2 space-y-0.5">
+      <nav className="flex-1 py-2.5 px-2 space-y-0.5">
         {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
           const isActive = matchRoute({ to, fuzzy: to !== "/" });
           return (
@@ -40,25 +40,25 @@ export function Sidebar() {
               key={to}
               to={to}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] transition-all duration-150",
                 isActive
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900",
+                  ? "bg-zinc-800/70 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/60",
               )}
             >
-              <Icon size={16} />
+              <Icon size={15} strokeWidth={isActive ? 2 : 1.5} />
               {label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="px-2 py-3 border-t border-zinc-800">
+      <div className="px-2 py-2.5 border-t border-zinc-800/60">
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+          className="flex items-center gap-2.5 px-3 py-1.5 w-full rounded-lg text-[13px] text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/60 transition-all duration-150"
         >
-          <LogOut size={16} />
+          <LogOut size={15} strokeWidth={1.5} />
           Logout
         </button>
       </div>

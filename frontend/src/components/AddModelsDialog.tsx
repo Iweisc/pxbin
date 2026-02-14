@@ -80,9 +80,12 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-lg m-4">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="relative bg-zinc-900/95 border border-zinc-800/40 rounded-xl shadow-2xl w-full max-w-lg m-4"
+        style={{ animation: "fadeInUp 0.25s ease-out forwards" }}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
           <h2 className="text-sm font-semibold text-zinc-100">
             {step === 1
               ? "Add Models"
@@ -90,23 +93,23 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
           </h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
         {step === 1 && (
           <form onSubmit={handleFetch} className="p-5 space-y-4">
             <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
                 Upstream
               </label>
               <select
                 value={selectedUpstreamId}
                 onChange={(e) => setSelectedUpstreamId(e.target.value)}
                 required
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-600"
+                className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-600 transition-colors"
               >
                 <option value="">Select an upstream...</option>
                 {(upstreams.data ?? [])
@@ -126,10 +129,10 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
             <button
               type="submit"
               disabled={!selectedUpstreamId || discover.isPending}
-              className="w-full py-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-white font-medium transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150 flex items-center justify-center gap-2"
             >
               {discover.isPending && (
-                <Loader2 size={14} className="animate-spin" />
+                <Loader2 size={13} className="animate-spin" />
               )}
               {discover.isPending ? "Fetching Models..." : "Fetch Models"}
             </button>
@@ -139,7 +142,7 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
         {step === 2 && (
           <div className="p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-zinc-400">
+              <p className="text-[10px] text-zinc-500">
                 {discovered.length} models found
                 {selectableModels.length < discovered.length && (
                   <span>
@@ -150,7 +153,7 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
               </p>
               <button
                 onClick={handleToggleAll}
-                className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
               >
                 {selected.size === selectableModels.length
                   ? "Deselect All"
@@ -158,7 +161,7 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
               </button>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-1 -mx-1 px-1">
+            <div className="max-h-80 overflow-y-auto space-y-0.5 -mx-1 px-1">
               {discovered.map((model) => {
                 const isExisting = existingNames.has(model.id);
                 const isSelected = selected.has(model.id);
@@ -166,23 +169,23 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
                 return (
                   <label
                     key={model.id}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                       isExisting
-                        ? "opacity-50 cursor-not-allowed"
-                        : "hover:bg-zinc-800 cursor-pointer"
+                        ? "opacity-40 cursor-not-allowed"
+                        : "hover:bg-zinc-800/30 cursor-pointer"
                     }`}
                   >
                     <div
-                      className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                      className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
                         isExisting
-                          ? "border-zinc-600 bg-zinc-700"
+                          ? "border-zinc-700 bg-zinc-700"
                           : isSelected
                             ? "border-emerald-500 bg-emerald-600"
                             : "border-zinc-600 bg-zinc-800"
                       }`}
                     >
                       {(isSelected || isExisting) && (
-                        <Check size={10} className="text-white" />
+                        <Check size={9} className="text-white" />
                       )}
                     </div>
                     <input
@@ -193,10 +196,10 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
                       className="sr-only"
                     />
                     <div className="min-w-0 flex-1">
-                      <span className="text-sm text-zinc-200 font-mono block truncate">
+                      <span className="text-xs text-zinc-200 font-mono block truncate">
                         {model.id}
                       </span>
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-[10px] text-zinc-600">
                         {model.owned_by}
                         {isExisting && " · already added"}
                       </span>
@@ -215,10 +218,10 @@ export function AddModelsDialog({ onClose }: { onClose: () => void }) {
             <button
               onClick={handleImport}
               disabled={selected.size === 0 || importModels.isPending}
-              className="w-full py-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-white font-medium transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150 flex items-center justify-center gap-2"
             >
               {importModels.isPending && (
-                <Loader2 size={14} className="animate-spin" />
+                <Loader2 size={13} className="animate-spin" />
               )}
               {importModels.isPending
                 ? "Importing..."

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { ProtectedRoute } from "../lib/auth.tsx";
 import { StatsCards } from "../components/StatsCards.tsx";
-import { LatencyChart } from "../components/LatencyChart.tsx";
+import { RequestsChart } from "../components/RequestsChart.tsx";
 import { CostChart } from "../components/CostChart.tsx";
 import { UsageChart } from "../components/UsageChart.tsx";
+import { LatencyChart } from "../components/LatencyChart.tsx";
 import { useOverviewStats, useTimeSeries, useLatencyStats } from "../hooks/useStats.ts";
 import type { Period, Interval } from "../lib/types.ts";
 
@@ -34,18 +35,20 @@ export function DashboardPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Dashboard</h1>
-          <div className="flex gap-1 bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
+          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">
+            Dashboard
+          </h1>
+          <div className="flex gap-0.5 bg-zinc-900/80 rounded-lg p-0.5 border border-zinc-800/50">
             {PERIOD_OPTIONS.map(({ label, value }) => (
               <button
                 key={value}
                 onClick={() => setPeriod(value)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all duration-150 ${
                   period === value
-                    ? "bg-zinc-700 text-zinc-100"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    ? "bg-zinc-700/80 text-zinc-100 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 {label}
@@ -56,10 +59,15 @@ export function DashboardPage() {
 
         <StatsCards data={overview.data} isLoading={overview.isLoading} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <LatencyChart data={latency.data} isLoading={latency.isLoading} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <RequestsChart data={timeSeries.data} isLoading={timeSeries.isLoading} />
           <CostChart data={timeSeries.data} isLoading={timeSeries.isLoading} />
           <UsageChart data={timeSeries.data} isLoading={timeSeries.isLoading} />
+          <LatencyChart
+            data={timeSeries.data}
+            summary={latency.data}
+            isLoading={timeSeries.isLoading}
+          />
         </div>
       </div>
     </ProtectedRoute>

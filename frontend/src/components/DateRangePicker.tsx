@@ -27,12 +27,12 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex gap-1 bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
+      <div className="flex gap-0.5 bg-zinc-900/80 rounded-lg p-0.5 border border-zinc-800/50">
         {PRESETS.map(({ label, hours }) => (
           <button
             key={label}
             onClick={() => applyPreset(hours)}
-            className="px-2.5 py-1 text-xs font-medium text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
+            className="px-2.5 py-1 text-[10px] font-medium text-zinc-500 hover:text-zinc-300 rounded-md transition-all duration-150"
           >
             {label}
           </button>
@@ -45,9 +45,9 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           const val = e.target.value;
           if (val) onChange(new Date(val).toISOString(), to);
         }}
-        className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-2 py-1"
+        className="bg-zinc-900/80 border border-zinc-800/50 rounded-lg text-[10px] text-zinc-400 px-2 py-1 focus:outline-none focus:border-zinc-700"
       />
-      <span className="text-zinc-500 text-xs">to</span>
+      <span className="text-zinc-600 text-[10px]">to</span>
       <input
         type="datetime-local"
         value={toLocalDatetime(to)}
@@ -55,7 +55,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           const val = e.target.value;
           if (val) onChange(from, new Date(val).toISOString());
         }}
-        className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-2 py-1"
+        className="bg-zinc-900/80 border border-zinc-800/50 rounded-lg text-[10px] text-zinc-400 px-2 py-1 focus:outline-none focus:border-zinc-700"
       />
     </div>
   );

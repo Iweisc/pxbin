@@ -44,10 +44,10 @@ export function LogsPage() {
     <ProtectedRoute>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Logs</h1>
+          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Logs</h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <input
             value={model}
             onChange={(e) => {
@@ -55,7 +55,7 @@ export function LogsPage() {
               setPage(1);
             }}
             placeholder="Filter by model..."
-            className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-3 py-1.5 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 w-48"
+            className="bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-xs text-zinc-300 px-3 py-1.5 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 w-48 transition-colors"
           />
           <select
             value={inputFormat}
@@ -63,7 +63,7 @@ export function LogsPage() {
               setInputFormat(e.target.value);
               setPage(1);
             }}
-            className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-2 py-1.5"
+            className="bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-xs text-zinc-300 px-2.5 py-1.5 focus:outline-none focus:border-zinc-500 transition-colors"
           >
             {FORMAT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -77,7 +77,7 @@ export function LogsPage() {
               setStatusCode(Number(e.target.value));
               setPage(1);
             }}
-            className="bg-zinc-800 border border-zinc-700 rounded-md text-xs text-zinc-300 px-2 py-1.5"
+            className="bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-xs text-zinc-300 px-2.5 py-1.5 focus:outline-none focus:border-zinc-500 transition-colors"
           >
             {STATUS_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>

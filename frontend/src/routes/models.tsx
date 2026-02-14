@@ -16,21 +16,21 @@ export function ModelsPage() {
     <ProtectedRoute>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Models</h1>
+          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Models</h1>
           <div className="flex gap-2">
             <button
               onClick={() => syncPricing.mutate()}
               disabled={syncPricing.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-zinc-200 font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-zinc-300 font-medium transition-all duration-150"
             >
-              <RefreshCw size={14} className={syncPricing.isPending ? "animate-spin" : ""} />
+              <RefreshCw size={13} className={syncPricing.isPending ? "animate-spin" : ""} />
               Sync Pricing
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md text-white font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white font-medium transition-all duration-150"
             >
-              <Plus size={14} />
+              <Plus size={13} />
               Add Models
             </button>
           </div>

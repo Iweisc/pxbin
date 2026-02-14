@@ -12,12 +12,12 @@ export function UpstreamsPage() {
     <ProtectedRoute>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Upstreams</h1>
+          <h1 className="text-lg font-semibold text-zinc-100 tracking-tight">Upstreams</h1>
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md text-white font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white font-medium transition-all duration-150"
           >
-            <Plus size={14} />
+            <Plus size={13} />
             Add Upstream
           </button>
         </div>
@@ -59,30 +59,33 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl w-full max-w-md m-4">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="relative bg-zinc-900/95 border border-zinc-800/40 rounded-xl shadow-2xl w-full max-w-md m-4"
+        style={{ animation: "fadeInUp 0.25s ease-out forwards" }}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
           <h2 className="text-sm font-semibold text-zinc-100">Add Upstream</h2>
           <button
             onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">Name</label>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
               placeholder="anthropic-primary"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
             />
           </div>
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
               Base URL
             </label>
             <input
@@ -90,11 +93,11 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setBaseUrl(e.target.value)}
               required
               placeholder="https://api.anthropic.com"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 font-mono"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
             />
           </div>
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
               API Key
             </label>
             <input
@@ -103,24 +106,24 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
               required
               type="password"
               placeholder="sk-ant-..."
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 font-mono"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
             />
           </div>
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
               API Format
             </label>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-600"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-500 transition-colors"
             >
               <option value="openai">OpenAI Compatible</option>
               <option value="anthropic">Native Anthropic</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
               Priority (lower = higher priority)
             </label>
             <input
@@ -128,7 +131,7 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
               onChange={(e) => setPriority(e.target.value)}
               type="number"
               min="0"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 font-mono"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
             />
           </div>
           {create.isError && (
@@ -139,7 +142,7 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
           <button
             type="submit"
             disabled={!name || !baseUrl || !apiKey || create.isPending}
-            className="w-full py-2 text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-white font-medium transition-colors"
+            className="w-full py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150"
           >
             {create.isPending ? "Creating..." : "Create Upstream"}
           </button>
