@@ -1,5 +1,5 @@
 import type { OverviewStats } from "../lib/types.ts";
-import { formatCost, formatTokens, formatDuration } from "../lib/utils.ts";
+import { formatCost, formatTokens, formatDuration, formatMicroseconds } from "../lib/utils.ts";
 
 interface StatsCardsProps {
   data: OverviewStats | undefined;
@@ -67,8 +67,8 @@ function Skeleton() {
 export function StatsCards({ data, isLoading }: StatsCardsProps) {
   if (isLoading || !data) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5">
-        {Array.from({ length: 7 }).map((_, i) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-2.5">
+        {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} />
         ))}
       </div>
@@ -114,10 +114,15 @@ export function StatsCards({ data, isLoading }: StatsCardsProps) {
       value: formatDuration(data.avg_latency_ms),
       accent: "#f59e0b",
     },
+    {
+      label: "Avg Overhead",
+      value: formatMicroseconds(data.avg_overhead_us),
+      accent: "#06b6d4",
+    },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-2.5">
       {stats.map((stat, i) => (
         <StatCard key={stat.label} {...stat} index={i} />
       ))}

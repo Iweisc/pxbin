@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"bytes"
-	"encoding/json"
+	json "github.com/bytedance/sonic"
 	"io"
 	"log"
 	"net/http"
@@ -21,21 +21,19 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	keyID := auth.GetKeyIDFromContext(r.Context())
 
-	// Read the request body to extract the model name for routing.
-	body, err := io.ReadAll(r.Body)
+	// Read the request body. Pre-allocates when Content-Length is known.
+	body, err := readBody(r)
 	if err != nil {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
-	var partial struct {
-		Model string `json:"model"`
-	}
-	json.Unmarshal(body, &partial)
+	modelNode, _ := json.Get(body, "model")
+	model, _ := modelNode.String()
 
 	// Resolve upstream based on model.
-	client, format, err := h.resolveUpstream(r.Context(), partial.Model)
+	client, format, err := h.resolveUpstream(r.Context(), model)
 	if err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, "server_error", "Failed to resolve upstream")
 		return
@@ -47,6 +45,7 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the request body to the upstream unchanged.
+	overheadUS := int(time.Since(start).Microseconds())
 	upstreamResp, err := client.Do(r.Context(), r.Method, "/v1/chat/completions", bytes.NewReader(body), nil)
 	if err != nil {
 		latency := time.Since(start)
@@ -55,10 +54,11 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 			Timestamp:    start,
 			Method:       r.Method,
 			Path:         r.URL.Path,
-			Model:        partial.Model,
+			Model:        model,
 			InputFormat:  "openai",
 			StatusCode:   http.StatusBadGateway,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: "upstream connection error: " + err.Error(),
 		})
 		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Failed to connect to upstream")
@@ -83,10 +83,11 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 			Timestamp:    start,
 			Method:       r.Method,
 			Path:         r.URL.Path,
-			Model:        partial.Model,
+			Model:        model,
 			InputFormat:  "openai",
 			StatusCode:   upstreamResp.StatusCode,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: string(upstreamBody),
 		})
 
@@ -130,10 +131,11 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 			Timestamp:   start,
 			Method:      r.Method,
 			Path:        r.URL.Path,
-			Model:       partial.Model,
+			Model:       model,
 			InputFormat: "openai",
 			StatusCode:  http.StatusOK,
 			LatencyMS:   int(latency.Milliseconds()),
+			OverheadUS:  overheadUS,
 		})
 		return
 	}
@@ -147,10 +149,11 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var oaiResp translate.OpenAIResponse
-	var model string
 	var inputTokens, outputTokens int
 	if err := json.Unmarshal(upstreamBody, &oaiResp); err == nil {
-		model = oaiResp.Model
+		if oaiResp.Model != "" {
+			model = oaiResp.Model
+		}
 		if oaiResp.Usage != nil {
 			inputTokens = oaiResp.Usage.PromptTokens
 			outputTokens = oaiResp.Usage.CompletionTokens
@@ -169,6 +172,7 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 		InputFormat:  "openai",
 		StatusCode:   upstreamResp.StatusCode,
 		LatencyMS:    int(latency.Milliseconds()),
+		OverheadUS:   overheadUS,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		Cost:         cost,

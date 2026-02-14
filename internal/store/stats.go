@@ -16,6 +16,7 @@ type OverviewStats struct {
 	CacheHitRate         float64 `json:"cache_hit_rate"`
 	TotalCost            float64 `json:"total_cost"`
 	AvgLatencyMS         int     `json:"avg_latency_ms"`
+	AvgOverheadUS        int     `json:"avg_overhead_us"`
 	ErrorCount           int     `json:"error_count"`
 	ErrorRate            float64 `json:"error_rate"`
 }
@@ -41,19 +42,23 @@ type ModelStats struct {
 }
 
 type TimeSeriesBucket struct {
-	Bucket       time.Time `json:"bucket"`
-	Requests     int       `json:"requests"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
-	Cost         float64   `json:"cost"`
-	AvgLatencyMS int       `json:"avg_latency_ms"`
-	Errors       int       `json:"errors"`
+	Bucket        time.Time `json:"bucket"`
+	Requests      int       `json:"requests"`
+	InputTokens   int64     `json:"input_tokens"`
+	OutputTokens  int64     `json:"output_tokens"`
+	Cost          float64   `json:"cost"`
+	AvgLatencyMS  int       `json:"avg_latency_ms"`
+	AvgOverheadUS int       `json:"avg_overhead_us"`
+	Errors        int       `json:"errors"`
 }
 
 type LatencyStats struct {
-	P50 int `json:"p50"`
-	P95 int `json:"p95"`
-	P99 int `json:"p99"`
+	P50         int `json:"p50"`
+	P95         int `json:"p95"`
+	P99         int `json:"p99"`
+	OverheadP50US int `json:"overhead_p50_us"`
+	OverheadP95US int `json:"overhead_p95_us"`
+	OverheadP99US int `json:"overhead_p99_us"`
 }
 
 func periodToInterval(period string) string {
@@ -91,6 +96,7 @@ func (s *Store) GetOverviewStats(ctx context.Context, period string) (*OverviewS
 			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
 			COALESCE(SUM(cost), 0) as total_cost,
 			COALESCE(AVG(latency_ms)::int, 0) as avg_latency_ms,
+			COALESCE(AVG(overhead_us)::int, 0) as avg_overhead_us,
 			COUNT(*) FILTER (WHERE status_code >= 400) as error_count
 		FROM request_logs
 		WHERE timestamp > now() - $1::interval
@@ -101,6 +107,7 @@ func (s *Store) GetOverviewStats(ctx context.Context, period string) (*OverviewS
 		&stats.TotalCacheReadTokens,
 		&stats.TotalCost,
 		&stats.AvgLatencyMS,
+		&stats.AvgOverheadUS,
 		&stats.ErrorCount,
 	)
 	if err != nil {
@@ -195,6 +202,7 @@ func (s *Store) GetTimeSeries(ctx context.Context, period, interval string) ([]T
 		SELECT date_trunc($1, timestamp) as bucket,
 			COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(cost), 0), COALESCE(AVG(latency_ms)::int, 0),
+			COALESCE(AVG(overhead_us)::int, 0),
 			COUNT(*) FILTER (WHERE status_code >= 400)
 		FROM request_logs
 		WHERE timestamp > now() - $2::interval
@@ -210,7 +218,7 @@ func (s *Store) GetTimeSeries(ctx context.Context, period, interval string) ([]T
 		var b TimeSeriesBucket
 		if err := rows.Scan(
 			&b.Bucket, &b.Requests, &b.InputTokens, &b.OutputTokens,
-			&b.Cost, &b.AvgLatencyMS, &b.Errors,
+			&b.Cost, &b.AvgLatencyMS, &b.AvgOverheadUS, &b.Errors,
 		); err != nil {
 			return nil, fmt.Errorf("scan time series bucket: %w", err)
 		}
@@ -226,10 +234,13 @@ func (s *Store) GetLatencyPercentiles(ctx context.Context, period string) (*Late
 		SELECT
 			COALESCE(percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms)::int, 0),
 			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)::int, 0),
-			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::int, 0)
+			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)::int, 0),
+			COALESCE(percentile_cont(0.50) WITHIN GROUP (ORDER BY overhead_us)::int, 0),
+			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY overhead_us)::int, 0),
+			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY overhead_us)::int, 0)
 		FROM request_logs
 		WHERE timestamp > now() - $1::interval AND latency_ms IS NOT NULL
-	`, interval).Scan(&stats.P50, &stats.P95, &stats.P99)
+	`, interval).Scan(&stats.P50, &stats.P95, &stats.P99, &stats.OverheadP50US, &stats.OverheadP95US, &stats.OverheadP99US)
 	if err != nil {
 		return nil, fmt.Errorf("get latency percentiles: %w", err)
 	}

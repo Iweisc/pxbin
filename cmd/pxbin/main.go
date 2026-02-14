@@ -46,6 +46,10 @@ func main() {
 	asyncLogger := logging.NewAsyncLogger(st, cfg.LogBufferSize)
 	defer asyncLogger.Close()
 
+	// Initialize log retention cleaner
+	logCleaner := logging.NewLogCleaner(st, cfg.LogRetentionDays)
+	defer logCleaner.Close()
+
 	// Initialize client cache for per-upstream connections
 	clientCache := proxy.NewClientCache()
 

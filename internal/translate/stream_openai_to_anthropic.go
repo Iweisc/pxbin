@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+
+	"github.com/bytedance/sonic"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,7 +104,7 @@ func TranslateOpenAIStreamToAnthropic(
 		payload := line[6:]
 
 		var chunk OpenAIStreamChunk
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+		if err := sonic.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue
 		}
 
@@ -130,8 +132,10 @@ func streamResultFromState(state *streamState) *StreamResult {
 	if state.usage != nil {
 		r.InputTokens = state.usage.PromptTokens
 		r.OutputTokens = state.usage.CompletionTokens
-		r.CacheCreationTokens = state.usage.PromptTokensDetails.CachedTokens
-		r.CacheReadTokens = state.usage.PromptTokensDetails.CachedTokens
+		if state.usage.PromptTokensDetails != nil {
+			r.CacheCreationTokens = state.usage.PromptTokensDetails.CachedTokens
+			r.CacheReadTokens = state.usage.PromptTokensDetails.CachedTokens
+		}
 	}
 	return r
 }
@@ -390,7 +394,7 @@ func finalizeStream(w http.ResponseWriter, flusher http.Flusher, state *streamSt
 // writeSSE marshals data as JSON and writes a properly formatted SSE event,
 // then flushes the response writer.
 func writeSSE(w http.ResponseWriter, flusher http.Flusher, eventType string, data interface{}) error {
-	jsonBytes, err := json.Marshal(data)
+	jsonBytes, err := sonic.Marshal(data)
 	if err != nil {
 		return err
 	}

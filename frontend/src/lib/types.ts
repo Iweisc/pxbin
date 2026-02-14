@@ -16,6 +16,7 @@ export interface OverviewStats {
   error_count: number;
   error_rate: number;
   avg_latency_ms: number;
+  avg_overhead_us: number;
 }
 
 export interface KeyStats {
@@ -49,6 +50,7 @@ export interface TimeSeriesBucket {
   cost: number;
   errors: number;
   avg_latency_ms: number;
+  avg_overhead_us: number;
   p50_latency_ms?: number;
   p95_latency_ms?: number;
   p99_latency_ms?: number;
@@ -59,6 +61,9 @@ export interface LatencyStats {
   p50: number;
   p95: number;
   p99: number;
+  overhead_p50_us: number;
+  overhead_p95_us: number;
+  overhead_p99_us: number;
 }
 
 export interface RequestLog {
@@ -75,6 +80,7 @@ export interface RequestLog {
   input_tokens: number | null;
   output_tokens: number | null;
   cost: number | null;
+  overhead_us: number | null;
   error_message: string | null;
   request_metadata: Record<string, unknown>;
   created_at: string;

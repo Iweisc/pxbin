@@ -1,6 +1,10 @@
 package translate
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/bytedance/sonic"
+)
 
 // ---------------------------------------------------------------------------
 // Anthropic API types
@@ -44,7 +48,7 @@ type AnthropicMessage struct {
 // ContentAsString returns the content as a plain string if it is one.
 func (m *AnthropicMessage) ContentAsString() (string, bool) {
 	var s string
-	if err := json.Unmarshal(m.Content, &s); err == nil {
+	if err := sonic.Unmarshal(m.Content, &s); err == nil {
 		return s, true
 	}
 	return "", false
@@ -53,7 +57,7 @@ func (m *AnthropicMessage) ContentAsString() (string, bool) {
 // ContentAsBlocks parses the content as an array of ContentBlock.
 func (m *AnthropicMessage) ContentAsBlocks() ([]ContentBlock, error) {
 	var blocks []ContentBlock
-	if err := json.Unmarshal(m.Content, &blocks); err != nil {
+	if err := sonic.Unmarshal(m.Content, &blocks); err != nil {
 		return nil, err
 	}
 	return blocks, nil

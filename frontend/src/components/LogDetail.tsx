@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { RequestLog } from "../lib/types.ts";
-import { formatDate, formatCost, formatDuration, formatTokens } from "../lib/utils.ts";
+import { formatDate, formatCost, formatDuration, formatTokens, formatMicroseconds } from "../lib/utils.ts";
 
 interface LogDetailProps {
   log: RequestLog;
@@ -68,6 +68,11 @@ export function LogDetail({ log, onClose }: LogDetailProps) {
             <Field
               label="Latency"
               value={log.latency_ms != null ? formatDuration(log.latency_ms) : null}
+            />
+            <Field
+              label="Proxy Overhead"
+              value={log.overhead_us != null ? formatMicroseconds(log.overhead_us) : null}
+              color="text-zinc-500"
             />
             <Field
               label="Input Tokens"

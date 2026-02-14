@@ -1,6 +1,6 @@
 package translate
 
-import "encoding/json"
+import json "github.com/bytedance/sonic"
 
 // TranslateOpenAIErrorToAnthropic converts an OpenAI error response body and
 // HTTP status code into an Anthropic-format error response body and status code.

@@ -16,13 +16,15 @@ type Config struct {
 	ManagementBootstrapKey string   `yaml:"management_bootstrap_key"`
 	CORSOrigins            []string `yaml:"cors_origins"`
 	EncryptionKey          string   `yaml:"encryption_key"`
+	LogRetentionDays       int      `yaml:"log_retention_days"`
 }
 
 // Load reads configuration from config.yaml and overrides with environment variables.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ListenAddr:    ":8080",
-		LogBufferSize: 10000,
+		ListenAddr:       ":8080",
+		LogBufferSize:    10000,
+		LogRetentionDays: 7,
 	}
 
 	data, err := os.ReadFile("config.yaml")
@@ -59,5 +61,10 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("PXBIN_ENCRYPTION_KEY"); v != "" {
 		cfg.EncryptionKey = v
+	}
+	if v := os.Getenv("PXBIN_LOG_RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LogRetentionDays = n
+		}
 	}
 }

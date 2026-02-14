@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	json "github.com/bytedance/sonic"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,42 +38,70 @@ func (h *Handler) HandleAnthropic(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	keyID := auth.GetKeyIDFromContext(r.Context())
 
-	// Read and parse the Anthropic request body.
-	body, err := io.ReadAll(r.Body)
+	// Read the request body. Pre-allocates when Content-Length is known.
+	body, err := readBody(r)
 	if err != nil {
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
-	var anthropicReq translate.AnthropicRequest
-	if err := json.Unmarshal(body, &anthropicReq); err != nil {
+	// Lazy-extract only model and stream — avoids full parse of large payloads
+	// (100KB+ system prompts, tools, conversation history).
+	model, stream, err := extractModelAndStream(body)
+	if err != nil {
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON in request body")
 		return
 	}
 
 	// Resolve which upstream to use based on the model.
-	client, format, err := h.resolveUpstream(r.Context(), anthropicReq.Model)
+	client, format, err := h.resolveUpstream(r.Context(), model)
 	if err != nil {
 		writeAnthropicError(w, http.StatusInternalServerError, "api_error", "Failed to resolve upstream")
 		return
 	}
 
 	if format == "openai" {
+		// Translation path — full parse required.
+		var anthropicReq translate.AnthropicRequest
+		if err := json.Unmarshal(body, &anthropicReq); err != nil {
+			writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON in request body")
+			return
+		}
 		h.handleAnthropicToOpenAI(w, r, client, body, &anthropicReq, keyID, start)
 	} else {
-		// "anthropic" or "" (fallback) → native passthrough
-		h.handleAnthropicNative(w, r, client, body, &anthropicReq, keyID, start)
+		// Native passthrough — no full parse needed.
+		h.handleAnthropicNative(w, r, client, body, model, stream, keyID, start)
 	}
+}
+
+// extractModelAndStream uses sonic's lazy parser to pull out just "model" and
+// "stream" from the request JSON without deserializing the full body.
+func extractModelAndStream(body []byte) (string, bool, error) {
+	modelNode, err := json.Get(body, "model")
+	if err != nil {
+		return "", false, err
+	}
+	model, err := modelNode.String()
+	if err != nil {
+		return "", false, err
+	}
+	streamNode, _ := json.Get(body, "stream")
+	stream, _ := streamNode.Bool()
+	return model, stream, nil
 }
 
 // handleAnthropicNative passes the request through to an Anthropic-format
 // upstream using x-api-key auth.
-func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, client *UpstreamClient, body []byte, anthropicReq *translate.AnthropicRequest, keyID uuid.UUID, start time.Time) {
+func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, client *UpstreamClient, body []byte, model string, stream bool, keyID uuid.UUID, start time.Time) {
 	extraHeaders := http.Header{
 		"X-Api-Key":         {client.apiKey},
 		"Anthropic-Version": {"2023-06-01"},
 	}
+	// Strip unsupported fields (e.g. cache_control.scope) that some
+	// upstreams reject. Cheap no-op when the field isn't present.
+	body = sanitizeAnthropicBody(body)
+	overheadUS := int(time.Since(start).Microseconds())
 	upstreamResp, err := client.DoRaw(r.Context(), "POST", "/v1/messages", bytes.NewReader(body), extraHeaders)
 	if err != nil {
 		latency := time.Since(start)
@@ -82,10 +110,11 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Timestamp:    start,
 			Method:       r.Method,
 			Path:         r.URL.Path,
-			Model:        anthropicReq.Model,
+			Model:        model,
 			InputFormat:  "anthropic",
 			StatusCode:   http.StatusBadGateway,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: "upstream connection error: " + err.Error(),
 		})
 		writeAnthropicError(w, http.StatusBadGateway, "api_error", "Failed to connect to upstream")
@@ -103,10 +132,11 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Timestamp:    start,
 			Method:       r.Method,
 			Path:         r.URL.Path,
-			Model:        anthropicReq.Model,
+			Model:        model,
 			InputFormat:  "anthropic",
 			StatusCode:   upstreamResp.StatusCode,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: string(upstreamBody),
 		})
 
@@ -117,7 +147,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Streaming response — passthrough SSE and capture usage.
-	if anthropicReq.Stream {
+	if stream {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -131,16 +161,17 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 		result := passthroughAnthropicStream(upstreamResp.Body, w, flusher)
 
 		latency := time.Since(start)
-		cost := h.billing.CalculateCost(anthropicReq.Model, result.InputTokens, result.OutputTokens)
+		cost := h.billing.CalculateCost(model, result.InputTokens, result.OutputTokens)
 		h.logger.Log(&logging.LogEntry{
 			KeyID:               keyID,
 			Timestamp:           start,
 			Method:              r.Method,
 			Path:                r.URL.Path,
-			Model:               anthropicReq.Model,
+			Model:               model,
 			InputFormat:         "anthropic",
 			StatusCode:          http.StatusOK,
 			LatencyMS:           int(latency.Milliseconds()),
+			OverheadUS:          overheadUS,
 			InputTokens:         result.InputTokens,
 			OutputTokens:        result.OutputTokens,
 			CacheCreationTokens: result.CacheCreationTokens,
@@ -165,16 +196,17 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 		cacheRead := anthropicResp.Usage.CacheReadInputTokens
 
 		latency := time.Since(start)
-		cost := h.billing.CalculateCost(anthropicReq.Model, inputTokens, outputTokens)
+		cost := h.billing.CalculateCost(model, inputTokens, outputTokens)
 		h.logger.Log(&logging.LogEntry{
 			KeyID:               keyID,
 			Timestamp:           start,
 			Method:              r.Method,
 			Path:                r.URL.Path,
-			Model:               anthropicReq.Model,
+			Model:               model,
 			InputFormat:         "anthropic",
 			StatusCode:          http.StatusOK,
 			LatencyMS:           int(latency.Milliseconds()),
+			OverheadUS:          overheadUS,
 			InputTokens:         inputTokens,
 			OutputTokens:        outputTokens,
 			CacheCreationTokens: cacheCreation,
@@ -203,6 +235,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	overheadUS := int(time.Since(start).Microseconds())
 	upstreamResp, err := client.Do(r.Context(), "POST", "/v1/chat/completions", bytes.NewReader(openaiBody), nil)
 	if err != nil {
 		latency := time.Since(start)
@@ -215,6 +248,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			InputFormat:  "anthropic",
 			StatusCode:   http.StatusBadGateway,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: "upstream connection error: " + err.Error(),
 		})
 		writeAnthropicError(w, http.StatusBadGateway, "api_error", "Failed to connect to upstream")
@@ -235,6 +269,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			InputFormat:  "anthropic",
 			StatusCode:   upstreamResp.StatusCode,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			ErrorMessage: string(upstreamBody),
 		})
 		writeAnthropicError(w, upstreamResp.StatusCode, "api_error", "Upstream error: "+string(upstreamBody))
@@ -272,6 +307,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			InputFormat:  "anthropic",
 			StatusCode:   http.StatusOK,
 			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
 			InputTokens:  inputTokens,
 			OutputTokens: outputTokens,
 			Cost:         cost,
@@ -315,6 +351,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 		InputFormat:  "anthropic",
 		StatusCode:   http.StatusOK,
 		LatencyMS:    int(latency.Milliseconds()),
+		OverheadUS:   overheadUS,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		Cost:         cost,
@@ -322,7 +359,8 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(anthropicResp)
+	b, _ := json.Marshal(anthropicResp)
+	w.Write(b)
 }
 
 // streamUsage holds usage info captured from an Anthropic SSE stream.
@@ -387,4 +425,44 @@ func passthroughAnthropicStream(upstream io.Reader, w http.ResponseWriter, flush
 
 	flusher.Flush()
 	return usage
+}
+
+// sanitizeAnthropicBody strips fields from cache_control objects that some
+// upstreams don't support (e.g. the "scope" field). Returns the body unchanged
+// when no "scope" is present — the bytes.Contains check makes this a no-op
+// for the vast majority of requests.
+func sanitizeAnthropicBody(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"scope"`)) {
+		return body
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body
+	}
+	stripCacheControlScope(raw)
+	cleaned, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return cleaned
+}
+
+// stripCacheControlScope recursively removes the "scope" key from any
+// cache_control object found in the JSON tree.
+func stripCacheControlScope(v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		if cc, ok := val["cache_control"]; ok {
+			if ccMap, ok := cc.(map[string]interface{}); ok {
+				delete(ccMap, "scope")
+			}
+		}
+		for _, child := range val {
+			stripCacheControlScope(child)
+		}
+	case []interface{}:
+		for _, item := range val {
+			stripCacheControlScope(item)
+		}
+	}
 }

@@ -31,6 +31,19 @@ export function formatDuration(ms: number): string {
   return `${Math.round(ms)}ms`;
 }
 
+export function formatMicroseconds(us: number): string {
+  if (us == null || isNaN(us)) {
+    return "0us";
+  }
+  if (us >= 1_000_000) {
+    return `${(us / 1_000_000).toFixed(1)}s`;
+  }
+  if (us >= 1000) {
+    return `${(us / 1000).toFixed(1)}ms`;
+  }
+  return `${Math.round(us)}us`;
+}
+
 export function formatDate(iso: string): string {
   if (!iso) {
     return "";

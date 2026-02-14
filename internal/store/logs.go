@@ -25,6 +25,7 @@ type LogEntry struct {
 	CacheCreationTokens int
 	CacheReadTokens    int
 	Cost               float64
+	OverheadUS         int
 	ErrorMessage       string
 	RequestMetadata    map[string]interface{}
 }
@@ -43,6 +44,7 @@ type RequestLog struct {
 	InputTokens     *int                   `json:"input_tokens"`
 	OutputTokens    *int                   `json:"output_tokens"`
 	Cost            *float64               `json:"cost"`
+	OverheadUS      *int                   `json:"overhead_us"`
 	ErrorMessage    *string                `json:"error_message"`
 	RequestMetadata map[string]interface{} `json:"request_metadata"`
 	CreatedAt       time.Time              `json:"created_at"`
@@ -64,12 +66,12 @@ func (s *Store) InsertLog(ctx context.Context, entry *LogEntry) error {
 		INSERT INTO request_logs (
 			llm_key_id, timestamp, method, path, model, input_format,
 			upstream_id, status_code, latency_ms, input_tokens, output_tokens,
-			cache_creation_tokens, cache_read_tokens, cost, error_message, request_metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			cache_creation_tokens, cache_read_tokens, cost, overhead_us, error_message, request_metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`,
 		entry.KeyID, entry.Timestamp, entry.Method, entry.Path, entry.Model, entry.InputFormat,
 		entry.UpstreamID, entry.StatusCode, entry.LatencyMS, entry.InputTokens, entry.OutputTokens,
-		entry.CacheCreationTokens, entry.CacheReadTokens, entry.Cost, entry.ErrorMessage, entry.RequestMetadata,
+		entry.CacheCreationTokens, entry.CacheReadTokens, entry.Cost, entry.OverheadUS, entry.ErrorMessage, entry.RequestMetadata,
 	)
 	if err != nil {
 		return fmt.Errorf("insert log: %w", err)
@@ -87,14 +89,14 @@ func (s *Store) InsertLogBatch(ctx context.Context, entries []*LogEntry) error {
 		INSERT INTO request_logs (
 			llm_key_id, timestamp, method, path, model, input_format,
 			upstream_id, status_code, latency_ms, input_tokens, output_tokens,
-			cache_creation_tokens, cache_read_tokens, cost, error_message, request_metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
+			cache_creation_tokens, cache_read_tokens, cost, overhead_us, error_message, request_metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
 
 	for _, entry := range entries {
 		batch.Queue(query,
 			entry.KeyID, entry.Timestamp, entry.Method, entry.Path, entry.Model, entry.InputFormat,
 			entry.UpstreamID, entry.StatusCode, entry.LatencyMS, entry.InputTokens, entry.OutputTokens,
-			entry.CacheCreationTokens, entry.CacheReadTokens, entry.Cost, entry.ErrorMessage, entry.RequestMetadata,
+			entry.CacheCreationTokens, entry.CacheReadTokens, entry.Cost, entry.OverheadUS, entry.ErrorMessage, entry.RequestMetadata,
 		)
 	}
 
@@ -114,12 +116,12 @@ func (s *Store) GetLog(ctx context.Context, id uuid.UUID) (*RequestLog, error) {
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, llm_key_id, timestamp, method, path, model, input_format,
 		       upstream_id, status_code, latency_ms, input_tokens, output_tokens,
-		       cost, error_message, request_metadata, created_at
+		       cost, overhead_us, error_message, request_metadata, created_at
 		FROM request_logs WHERE id = $1
 	`, id).Scan(
 		&log.ID, &log.KeyID, &log.Timestamp, &log.Method, &log.Path, &log.Model, &log.InputFormat,
 		&log.UpstreamID, &log.StatusCode, &log.LatencyMS, &log.InputTokens, &log.OutputTokens,
-		&log.Cost, &log.ErrorMessage, &log.RequestMetadata, &log.CreatedAt,
+		&log.Cost, &log.OverheadUS, &log.ErrorMessage, &log.RequestMetadata, &log.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -141,7 +143,7 @@ func (s *Store) ListLogs(ctx context.Context, filter LogFilter) ([]RequestLog, i
 		argIdx++
 	}
 	if filter.Model != nil {
-		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("model ILIKE '%%' || $%d || '%%'", argIdx))
 		args = append(args, *filter.Model)
 		argIdx++
 	}
@@ -190,7 +192,7 @@ func (s *Store) ListLogs(ctx context.Context, filter LogFilter) ([]RequestLog, i
 	query := fmt.Sprintf(`
 		SELECT id, llm_key_id, timestamp, method, path, model, input_format,
 		       upstream_id, status_code, latency_ms, input_tokens, output_tokens,
-		       cost, error_message, request_metadata, created_at,
+		       cost, overhead_us, error_message, request_metadata, created_at,
 		       COUNT(*) OVER() as total
 		FROM request_logs %s
 		ORDER BY timestamp DESC
@@ -210,7 +212,7 @@ func (s *Store) ListLogs(ctx context.Context, filter LogFilter) ([]RequestLog, i
 		if err := rows.Scan(
 			&log.ID, &log.KeyID, &log.Timestamp, &log.Method, &log.Path, &log.Model, &log.InputFormat,
 			&log.UpstreamID, &log.StatusCode, &log.LatencyMS, &log.InputTokens, &log.OutputTokens,
-			&log.Cost, &log.ErrorMessage, &log.RequestMetadata, &log.CreatedAt,
+			&log.Cost, &log.OverheadUS, &log.ErrorMessage, &log.RequestMetadata, &log.CreatedAt,
 			&total,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan log: %w", err)

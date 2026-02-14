@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/bytedance/sonic"
 )
 
 // generateMessageID returns a unique Anthropic-style message ID: "msg_" + 24 hex chars.
@@ -70,7 +72,7 @@ func OpenAIResponseToAnthropic(resp *OpenAIResponse, model string) (*AnthropicRe
 		}
 
 		var input json.RawMessage
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
+		if err := sonic.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
 			input = json.RawMessage(`{}`)
 		}
 

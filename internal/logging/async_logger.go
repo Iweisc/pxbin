@@ -26,6 +26,7 @@ type LogEntry struct {
 	CacheCreationTokens int
 	CacheReadTokens    int
 	Cost               float64
+	OverheadUS         int
 	ErrorMessage       string
 	RequestMetadata    map[string]interface{}
 }
@@ -130,6 +131,7 @@ func convertToStoreEntry(e *LogEntry) *store.LogEntry {
 		CacheCreationTokens: e.CacheCreationTokens,
 		CacheReadTokens:    e.CacheReadTokens,
 		Cost:               e.Cost,
+		OverheadUS:         e.OverheadUS,
 		ErrorMessage:       e.ErrorMessage,
 		RequestMetadata:    e.RequestMetadata,
 	}

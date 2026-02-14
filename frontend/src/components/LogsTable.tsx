@@ -1,6 +1,6 @@
 import { DataTable, type Column } from "./DataTable.tsx";
 import type { RequestLog } from "../lib/types.ts";
-import { formatDate, formatCost, formatDuration, formatTokens } from "../lib/utils.ts";
+import { formatDate, formatCost, formatDuration, formatTokens, formatMicroseconds } from "../lib/utils.ts";
 
 function statusColor(code: number | null): string {
   if (!code) return "text-zinc-500";
@@ -66,6 +66,15 @@ const columns: Column<RequestLog>[] = [
     render: (r) => (
       <span className="font-mono text-xs">
         {r.output_tokens != null ? formatTokens(r.output_tokens) : "-"}
+      </span>
+    ),
+  },
+  {
+    key: "overhead",
+    header: "Overhead",
+    render: (r) => (
+      <span className="font-mono text-xs text-zinc-500">
+        {r.overhead_us != null ? formatMicroseconds(r.overhead_us) : "-"}
       </span>
     ),
   },

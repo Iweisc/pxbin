@@ -2,6 +2,8 @@ package translate
 
 import (
 	"encoding/json"
+
+	"github.com/bytedance/sonic"
 	"fmt"
 	"strings"
 )
@@ -105,7 +107,7 @@ func AnthropicRequestToOpenAI(req *AnthropicRequest) (*OpenAIRequest, error) {
 func translateSystem(raw json.RawMessage) (*OpenAIMessage, error) {
 	// Try as a plain string first.
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := sonic.Unmarshal(raw, &s); err == nil {
 		if s == "" {
 			return nil, nil
 		}
@@ -114,7 +116,7 @@ func translateSystem(raw json.RawMessage) (*OpenAIMessage, error) {
 
 	// Try as an array of SystemBlock.
 	var blocks []SystemBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
+	if err := sonic.Unmarshal(raw, &blocks); err != nil {
 		return nil, fmt.Errorf("system is neither a string nor an array of blocks: %w", err)
 	}
 	if len(blocks) == 0 {
@@ -237,13 +239,13 @@ func toolResultContent(raw json.RawMessage) (interface{}, error) {
 
 	// Try as string.
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := sonic.Unmarshal(raw, &s); err == nil {
 		return s, nil
 	}
 
 	// Try as array of ContentBlock.
 	var blocks []ContentBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
+	if err := sonic.Unmarshal(raw, &blocks); err != nil {
 		return nil, fmt.Errorf("tool_result content is neither string nor array: %w", err)
 	}
 
@@ -312,10 +314,10 @@ func marshalToolInput(raw json.RawMessage) (string, error) {
 	}
 	// Re-marshal to get a compact canonical form.
 	var v interface{}
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if err := sonic.Unmarshal(raw, &v); err != nil {
 		return "", err
 	}
-	b, err := json.Marshal(v)
+	b, err := sonic.Marshal(v)
 	if err != nil {
 		return "", err
 	}
@@ -326,7 +328,7 @@ func marshalToolInput(raw json.RawMessage) (string, error) {
 func translateToolChoice(raw json.RawMessage) (interface{}, error) {
 	// Try as a plain string first.
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := sonic.Unmarshal(raw, &s); err == nil {
 		switch s {
 		case "auto":
 			return "auto", nil
@@ -341,7 +343,7 @@ func translateToolChoice(raw json.RawMessage) (interface{}, error) {
 
 	// Try as an object.
 	var obj ToolChoiceObj
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	if err := sonic.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("tool_choice is neither string nor object: %w", err)
 	}
 

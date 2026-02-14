@@ -8,7 +8,7 @@ import {
   Tooltip,
 } from "recharts";
 import type { TimeSeriesBucket, LatencyStats } from "../lib/types.ts";
-import { formatDate, formatDuration } from "../lib/utils.ts";
+import { formatDate, formatDuration, formatMicroseconds } from "../lib/utils.ts";
 
 interface LatencyChartProps {
   data: TimeSeriesBucket[] | undefined;
@@ -69,6 +69,10 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
                 avg
               </span>
             )}
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+              overhead
+            </span>
           </div>
         </div>
         {summary && (
@@ -81,6 +85,10 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
             </span>
             <span className="text-red-400">
               p99 {formatDuration(summary.p99)}
+            </span>
+            <span className="text-zinc-600">|</span>
+            <span className="text-cyan-400">
+              overhead p50 {formatMicroseconds(summary.overhead_p50_us)}
             </span>
           </div>
         )}
@@ -102,8 +110,19 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
             tickLine={false}
           />
           <YAxis
+            yAxisId="latency"
             tickFormatter={(v: number) => formatDuration(v)}
             stroke="#3f3f46"
+            fontSize={10}
+            axisLine={false}
+            tickLine={false}
+            width={50}
+          />
+          <YAxis
+            yAxisId="overhead"
+            orientation="right"
+            tickFormatter={(v: number) => formatMicroseconds(v)}
+            stroke="#06b6d4"
             fontSize={10}
             axisLine={false}
             tickLine={false}
@@ -118,13 +137,17 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
                 p95_latency_ms: "p95",
                 p99_latency_ms: "p99",
                 avg_latency_ms: "Avg",
+                avg_overhead_us: "Overhead",
               };
-              return [formatDuration(Number(value) || 0), labels[String(name)] || name];
+              const n = String(name);
+              const fmt = n === "avg_overhead_us" ? formatMicroseconds : formatDuration;
+              return [fmt(Number(value) || 0), labels[n] || n];
             }}
           />
           {hasPercentiles ? (
             <>
               <Line
+                yAxisId="latency"
                 type="monotone"
                 dataKey="p50_latency_ms"
                 stroke="#10b981"
@@ -133,6 +156,7 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
                 activeDot={{ r: 3, fill: "#10b981" }}
               />
               <Line
+                yAxisId="latency"
                 type="monotone"
                 dataKey="p95_latency_ms"
                 stroke="#f59e0b"
@@ -141,6 +165,7 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
                 activeDot={{ r: 3, fill: "#f59e0b" }}
               />
               <Line
+                yAxisId="latency"
                 type="monotone"
                 dataKey="p99_latency_ms"
                 stroke="#ef4444"
@@ -152,6 +177,7 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
             </>
           ) : (
             <Line
+              yAxisId="latency"
               type="monotone"
               dataKey="avg_latency_ms"
               stroke="#10b981"
@@ -160,6 +186,16 @@ export function LatencyChart({ data, summary, isLoading }: LatencyChartProps) {
               activeDot={{ r: 3, fill: "#10b981" }}
             />
           )}
+          <Line
+            yAxisId="overhead"
+            type="monotone"
+            dataKey="avg_overhead_us"
+            stroke="#06b6d4"
+            strokeWidth={1.5}
+            dot={false}
+            strokeDasharray="3 3"
+            activeDot={{ r: 3, fill: "#06b6d4" }}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
