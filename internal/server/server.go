@@ -14,6 +14,7 @@ import (
 type ProxyHandler interface {
 	HandleAnthropic(w http.ResponseWriter, r *http.Request)
 	HandleOpenAI(w http.ResponseWriter, r *http.Request)
+	HandleOpenAIResponses(w http.ResponseWriter, r *http.Request)
 }
 
 // New creates and configures the chi router with all routes mounted.
@@ -36,6 +37,8 @@ func New(cfg *config.Config, proxy ProxyHandler, llmAuth func(http.Handler) http
 		r.Use(llmAuth)
 		r.Post("/messages", proxy.HandleAnthropic)
 		r.Post("/chat/completions", proxy.HandleOpenAI)
+		r.Post("/responses", proxy.HandleOpenAIResponses)
+		r.Post("/responses/compact", proxy.HandleOpenAIResponses)
 	})
 
 	// Management API routes (already handled by the management router's middleware)

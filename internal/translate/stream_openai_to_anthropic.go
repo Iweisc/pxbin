@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io"
 	"net/http"
 	"strings"
@@ -26,7 +26,7 @@ type toolCallState struct {
 // streamState holds all mutable state for the OpenAI-to-Anthropic SSE
 // translation state machine.
 type streamState struct {
-	messageStartSent bool
+	messageStartSent  bool
 	currentBlockIndex int
 	currentBlockType  string // "" | "text" | "tool_use"
 	toolCalls         map[int]*toolCallState
@@ -38,10 +38,10 @@ type streamState struct {
 
 // StreamResult contains usage information captured during streaming translation.
 type StreamResult struct {
-	InputTokens        int
-	OutputTokens       int
+	InputTokens         int
+	OutputTokens        int
 	CacheCreationTokens int
-	CacheReadTokens    int
+	CacheReadTokens     int
 }
 
 // TranslateOpenAIStreamToAnthropic reads an OpenAI streaming response from
@@ -130,12 +130,7 @@ func TranslateOpenAIStreamToAnthropic(
 func streamResultFromState(state *streamState) *StreamResult {
 	r := &StreamResult{}
 	if state.usage != nil {
-		r.InputTokens = state.usage.PromptTokens
-		r.OutputTokens = state.usage.CompletionTokens
-		if state.usage.PromptTokensDetails != nil {
-			r.CacheCreationTokens = state.usage.PromptTokensDetails.CachedTokens
-			r.CacheReadTokens = state.usage.PromptTokensDetails.CachedTokens
-		}
+		r.InputTokens, r.OutputTokens, r.CacheReadTokens = normalizeOpenAIUsage(state.usage)
 	}
 	return r
 }
@@ -370,8 +365,7 @@ func finalizeStream(w http.ResponseWriter, flusher http.Flusher, state *streamSt
 	inputTokens := 0
 	outputTokens := 0
 	if state.usage != nil {
-		inputTokens = state.usage.PromptTokens
-		outputTokens = state.usage.CompletionTokens
+		inputTokens, outputTokens, _ = normalizeOpenAIUsage(state.usage)
 	}
 
 	if err := writeSSE(w, flusher, "message_delta", MessageDeltaEvent{

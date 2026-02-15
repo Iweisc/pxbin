@@ -88,9 +88,11 @@ func OpenAIResponseToAnthropic(resp *OpenAIResponse, model string) (*AnthropicRe
 
 	var usage AnthropicUsage
 	if resp.Usage != nil {
+		inputTokens, outputTokens, cacheReadTokens := normalizeOpenAIUsage(resp.Usage)
 		usage = AnthropicUsage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
+			InputTokens:          inputTokens,
+			OutputTokens:         outputTokens,
+			CacheReadInputTokens: cacheReadTokens,
 		}
 	}
 

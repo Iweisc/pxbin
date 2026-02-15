@@ -314,12 +314,12 @@ func TestTextThenToolCall(t *testing.T) {
 	assertEventTypes(t, events, []string{
 		"message_start",
 		"ping",
-		"content_block_start",  // text
-		"content_block_delta",  // text delta
-		"content_block_stop",   // close text
-		"content_block_start",  // tool_use
-		"content_block_delta",  // arguments
-		"content_block_stop",   // close tool_use
+		"content_block_start", // text
+		"content_block_delta", // text delta
+		"content_block_stop",  // close text
+		"content_block_start", // tool_use
+		"content_block_delta", // arguments
+		"content_block_stop",  // close tool_use
 		"message_delta",
 		"message_stop",
 	})
@@ -401,12 +401,12 @@ func TestMultipleToolCalls(t *testing.T) {
 	assertEventTypes(t, events, []string{
 		"message_start",
 		"ping",
-		"content_block_start",  // tool 1
-		"content_block_delta",  // tool 1 args
-		"content_block_stop",   // close tool 1
-		"content_block_start",  // tool 2
-		"content_block_delta",  // tool 2 args
-		"content_block_stop",   // close tool 2
+		"content_block_start", // tool 1
+		"content_block_delta", // tool 1 args
+		"content_block_stop",  // close tool 1
+		"content_block_start", // tool 2
+		"content_block_delta", // tool 2 args
+		"content_block_stop",  // close tool 2
 		"message_delta",
 		"message_stop",
 	})
@@ -452,6 +452,9 @@ func TestUsageInFinalChunk(t *testing.T) {
 				PromptTokens:     10,
 				CompletionTokens: 42,
 				TotalTokens:      52,
+				PromptTokensDetails: &OpenAIPromptTokensDetails{
+					CachedTokens: 8,
+				},
 			},
 		},
 	)
@@ -475,16 +478,22 @@ func TestUsageInFinalChunk(t *testing.T) {
 	if msgDelta.Usage.OutputTokens != 42 {
 		t.Errorf("expected 42 output tokens, got %d", msgDelta.Usage.OutputTokens)
 	}
+	if msgDelta.Usage.InputTokens != 2 {
+		t.Errorf("expected 2 input tokens, got %d", msgDelta.Usage.InputTokens)
+	}
 
 	// Verify StreamResult captures usage.
 	if result == nil {
 		t.Fatal("expected non-nil StreamResult")
 	}
-	if result.InputTokens != 10 {
-		t.Errorf("expected 10 input tokens in result, got %d", result.InputTokens)
+	if result.InputTokens != 2 {
+		t.Errorf("expected 2 input tokens in result, got %d", result.InputTokens)
 	}
 	if result.OutputTokens != 42 {
 		t.Errorf("expected 42 output tokens in result, got %d", result.OutputTokens)
+	}
+	if result.CacheReadTokens != 8 {
+		t.Errorf("expected 8 cache read tokens in result, got %d", result.CacheReadTokens)
 	}
 }
 
@@ -740,51 +749,51 @@ func TestMalformedChunkSkipped(t *testing.T) {
 
 func TestTranslateOpenAIErrorToAnthropic(t *testing.T) {
 	tests := []struct {
-		name           string
-		statusCode     int
-		body           string
-		wantType       string
-		wantStatus     int
-		wantContains   string
+		name         string
+		statusCode   int
+		body         string
+		wantType     string
+		wantStatus   int
+		wantContains string
 	}{
 		{
-			name:       "400 bad request",
-			statusCode: 400,
-			body:       `{"error":{"message":"Invalid model","type":"invalid_request_error","param":null,"code":null}}`,
-			wantType:   "invalid_request_error",
-			wantStatus: 400,
+			name:         "400 bad request",
+			statusCode:   400,
+			body:         `{"error":{"message":"Invalid model","type":"invalid_request_error","param":null,"code":null}}`,
+			wantType:     "invalid_request_error",
+			wantStatus:   400,
 			wantContains: "Invalid model",
 		},
 		{
-			name:       "401 auth error",
-			statusCode: 401,
-			body:       `{"error":{"message":"Invalid API key","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}`,
-			wantType:   "authentication_error",
-			wantStatus: 401,
+			name:         "401 auth error",
+			statusCode:   401,
+			body:         `{"error":{"message":"Invalid API key","type":"invalid_api_key","param":null,"code":"invalid_api_key"}}`,
+			wantType:     "authentication_error",
+			wantStatus:   401,
 			wantContains: "Invalid API key",
 		},
 		{
-			name:       "429 rate limit",
-			statusCode: 429,
-			body:       `{"error":{"message":"Rate limit exceeded","type":"rate_limit_error","param":null,"code":null}}`,
-			wantType:   "rate_limit_error",
-			wantStatus: 429,
+			name:         "429 rate limit",
+			statusCode:   429,
+			body:         `{"error":{"message":"Rate limit exceeded","type":"rate_limit_error","param":null,"code":null}}`,
+			wantType:     "rate_limit_error",
+			wantStatus:   429,
 			wantContains: "Rate limit exceeded",
 		},
 		{
-			name:       "500 server error",
-			statusCode: 500,
-			body:       `{"error":{"message":"Internal error","type":"server_error","param":null,"code":null}}`,
-			wantType:   "api_error",
-			wantStatus: 502,
+			name:         "500 server error",
+			statusCode:   500,
+			body:         `{"error":{"message":"Internal error","type":"server_error","param":null,"code":null}}`,
+			wantType:     "api_error",
+			wantStatus:   502,
 			wantContains: "Internal error",
 		},
 		{
-			name:       "unparseable body",
-			statusCode: 502,
-			body:       `not json at all`,
-			wantType:   "api_error",
-			wantStatus: 502,
+			name:         "unparseable body",
+			statusCode:   502,
+			body:         `not json at all`,
+			wantType:     "api_error",
+			wantStatus:   502,
 			wantContains: "not json at all",
 		},
 	}

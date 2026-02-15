@@ -1,11 +1,11 @@
-export function formatCost(cents: number): string {
-  if (cents == null || isNaN(cents)) {
+export function formatCost(dollars: number): string {
+  if (dollars == null || isNaN(dollars)) {
     return "$0.00";
   }
-  if (cents >= 100) {
-    return `$${(cents / 100).toFixed(2)}`;
+  if (dollars >= 1) {
+    return `$${dollars.toFixed(2)}`;
   }
-  return `${cents.toFixed(2)}c`;
+  return `${(dollars * 100).toFixed(2)}c`;
 }
 
 export function formatTokens(n: number): string {

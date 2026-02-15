@@ -264,6 +264,43 @@ func TestOpenAIResponseToAnthropic_UsageTranslation(t *testing.T) {
 	if result.Usage.OutputTokens != 17 {
 		t.Errorf("OutputTokens = %d, want 17", result.Usage.OutputTokens)
 	}
+	if result.Usage.CacheReadInputTokens != 0 {
+		t.Errorf("CacheReadInputTokens = %d, want 0", result.Usage.CacheReadInputTokens)
+	}
+}
+
+func TestOpenAIResponseToAnthropic_UsageTranslationWithCachedTokens(t *testing.T) {
+	resp := &OpenAIResponse{
+		Choices: []OpenAIChoice{
+			{
+				Message:      OpenAIMessage{Role: "assistant", Content: "hi"},
+				FinishReason: strPtr("stop"),
+			},
+		},
+		Usage: &OpenAIUsage{
+			PromptTokens:     42,
+			CompletionTokens: 17,
+			TotalTokens:      59,
+			PromptTokensDetails: &OpenAIPromptTokensDetails{
+				CachedTokens: 40,
+			},
+		},
+	}
+
+	result, err := OpenAIResponseToAnthropic(resp, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Usage.InputTokens != 2 {
+		t.Errorf("InputTokens = %d, want 2", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 17 {
+		t.Errorf("OutputTokens = %d, want 17", result.Usage.OutputTokens)
+	}
+	if result.Usage.CacheReadInputTokens != 40 {
+		t.Errorf("CacheReadInputTokens = %d, want 40", result.Usage.CacheReadInputTokens)
+	}
 }
 
 func TestOpenAIResponseToAnthropic_NilUsage(t *testing.T) {

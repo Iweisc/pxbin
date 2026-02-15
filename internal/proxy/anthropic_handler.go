@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	json "github.com/bytedance/sonic"
 	"fmt"
+	json "github.com/bytedance/sonic"
 	"io"
 	"net/http"
 	"time"
@@ -293,24 +293,30 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 		latency := time.Since(start)
 		inputTokens := 0
 		outputTokens := 0
+		cacheCreationTokens := 0
+		cacheReadTokens := 0
 		if result != nil {
 			inputTokens = result.InputTokens
 			outputTokens = result.OutputTokens
+			cacheCreationTokens = result.CacheCreationTokens
+			cacheReadTokens = result.CacheReadTokens
 		}
 		cost := h.billing.CalculateCost(anthropicReq.Model, inputTokens, outputTokens)
 		h.logger.Log(&logging.LogEntry{
-			KeyID:        keyID,
-			Timestamp:    start,
-			Method:       r.Method,
-			Path:         r.URL.Path,
-			Model:        anthropicReq.Model,
-			InputFormat:  "anthropic",
-			StatusCode:   http.StatusOK,
-			LatencyMS:    int(latency.Milliseconds()),
-			OverheadUS:   overheadUS,
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
-			Cost:         cost,
+			KeyID:               keyID,
+			Timestamp:           start,
+			Method:              r.Method,
+			Path:                r.URL.Path,
+			Model:               anthropicReq.Model,
+			InputFormat:         "anthropic",
+			StatusCode:          http.StatusOK,
+			LatencyMS:           int(latency.Milliseconds()),
+			OverheadUS:          overheadUS,
+			InputTokens:         inputTokens,
+			OutputTokens:        outputTokens,
+			CacheCreationTokens: cacheCreationTokens,
+			CacheReadTokens:     cacheReadTokens,
+			Cost:                cost,
 		})
 		return
 	}
@@ -335,26 +341,32 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 	}
 	inputTokens := 0
 	outputTokens := 0
+	cacheReadTokens := 0
 	if oaiResp.Usage != nil {
 		inputTokens = oaiResp.Usage.PromptTokens
 		outputTokens = oaiResp.Usage.CompletionTokens
+		if oaiResp.Usage.PromptTokensDetails != nil {
+			cacheReadTokens = oaiResp.Usage.PromptTokensDetails.CachedTokens
+			inputTokens, cacheReadTokens = normalizeOpenAIInputAndCache(inputTokens, cacheReadTokens)
+		}
 	}
 
 	latency := time.Since(start)
 	cost := h.billing.CalculateCost(anthropicReq.Model, inputTokens, outputTokens)
 	h.logger.Log(&logging.LogEntry{
-		KeyID:        keyID,
-		Timestamp:    start,
-		Method:       r.Method,
-		Path:         r.URL.Path,
-		Model:        anthropicReq.Model,
-		InputFormat:  "anthropic",
-		StatusCode:   http.StatusOK,
-		LatencyMS:    int(latency.Milliseconds()),
-		OverheadUS:   overheadUS,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		Cost:         cost,
+		KeyID:           keyID,
+		Timestamp:       start,
+		Method:          r.Method,
+		Path:            r.URL.Path,
+		Model:           anthropicReq.Model,
+		InputFormat:     "anthropic",
+		StatusCode:      http.StatusOK,
+		LatencyMS:       int(latency.Milliseconds()),
+		OverheadUS:      overheadUS,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+		CacheReadTokens: cacheReadTokens,
+		Cost:            cost,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
