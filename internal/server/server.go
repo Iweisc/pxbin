@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -18,7 +19,7 @@ type ProxyHandler interface {
 }
 
 // New creates and configures the chi router with all routes mounted.
-func New(cfg *config.Config, proxy ProxyHandler, llmAuth func(http.Handler) http.Handler, mgmtRouter chi.Router, bootstrapHandler http.HandlerFunc) *chi.Mux {
+func New(cfg *config.Config, proxy ProxyHandler, llmAuth func(http.Handler) http.Handler, mgmtRouter chi.Router, bootstrapHandler http.HandlerFunc, frontendFS fs.FS) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Recoverer)
@@ -54,6 +55,21 @@ func New(cfg *config.Config, proxy ProxyHandler, llmAuth func(http.Handler) http
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// Serve embedded frontend (SPA with index.html fallback)
+	if frontendFS != nil {
+		fileServer := http.FileServer(http.FS(frontendFS))
+		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			// Try serving the exact file first
+			if _, err := fs.Stat(frontendFS, r.URL.Path[1:]); err == nil {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			// Fall back to index.html for SPA client-side routing
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+		})
+	}
 
 	return r
 }

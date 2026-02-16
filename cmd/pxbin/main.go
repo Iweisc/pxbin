@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	pxbin "github.com/sertdev/pxbin"
 	"github.com/sertdev/pxbin/internal/api"
 	"github.com/sertdev/pxbin/internal/auth"
 	"github.com/sertdev/pxbin/internal/billing"
@@ -55,6 +57,9 @@ func main() {
 
 	// Initialize model resolution cache (60s TTL — models/upstreams rarely change)
 	modelCache := proxy.NewModelCache(st, 60*time.Second)
+	if err := modelCache.Warm(context.Background()); err != nil {
+		log.Printf("model cache warmup failed: %v", err)
+	}
 
 	// Initialize proxy handler
 	proxyHandler := proxy.NewHandler(clientCache, modelCache, st, asyncLogger, billingTracker)
@@ -74,8 +79,14 @@ func main() {
 	// Initialize bootstrap handler (nil if no bootstrap key configured)
 	bootstrapHandler := api.NewBootstrapHandler(st, cfg.ManagementBootstrapKey)
 
+	// Strip "frontend/dist" prefix from embedded FS
+	frontendFS, err := fs.Sub(pxbin.FrontendDist, "frontend/dist")
+	if err != nil {
+		log.Fatalf("failed to load embedded frontend: %v", err)
+	}
+
 	// Build the main server router
-	router := server.New(cfg, proxyHandler, llmAuth, mgmtRouter, bootstrapHandler)
+	router := server.New(cfg, proxyHandler, llmAuth, mgmtRouter, bootstrapHandler, frontendFS)
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
