@@ -31,12 +31,18 @@ type LogEntry struct {
 	RequestMetadata    map[string]interface{}
 }
 
+// DroppedCounter is an interface for reporting dropped log metrics.
+type DroppedCounter interface {
+	Add(float64)
+}
+
 type AsyncLogger struct {
-	ch      chan *LogEntry
-	store   *store.Store
-	wg      sync.WaitGroup
-	done    chan struct{}
-	dropped int64 // atomic counter
+	ch             chan *LogEntry
+	store          *store.Store
+	wg             sync.WaitGroup
+	done           chan struct{}
+	dropped        int64 // atomic counter
+	droppedCounter DroppedCounter
 }
 
 func NewAsyncLogger(s *store.Store, bufferSize int) *AsyncLogger {
@@ -51,6 +57,11 @@ func NewAsyncLogger(s *store.Store, bufferSize int) *AsyncLogger {
 	al.wg.Add(1)
 	go al.worker()
 	return al
+}
+
+// SetDroppedCounter sets an optional metrics counter for dropped logs.
+func (al *AsyncLogger) SetDroppedCounter(c DroppedCounter) {
+	al.droppedCounter = c
 }
 
 func (al *AsyncLogger) Log(entry *LogEntry) {
@@ -100,6 +111,12 @@ func (al *AsyncLogger) worker() {
 			}
 		case <-ticker.C:
 			flush()
+			if newDropped := atomic.SwapInt64(&al.dropped, 0); newDropped > 0 {
+				log.Printf("async logger: dropped %d log entries", newDropped)
+				if al.droppedCounter != nil {
+					al.droppedCounter.Add(float64(newDropped))
+				}
+			}
 		case <-al.done:
 			// Drain remaining
 			for {

@@ -6,6 +6,9 @@ listen_addr: ":8080"
 # PostgreSQL connection string
 database_url: "postgres://pxbin:pxbin@localhost:5432/pxbin?sslmode=disable"
 
+# Optional schema for pxbin objects (recommended when sharing a cluster)
+database_schema: "public"
+
 # Async log buffer size (number of entries buffered before flush)
 log_buffer_size: 10000
 

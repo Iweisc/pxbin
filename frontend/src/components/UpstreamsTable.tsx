@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Trash2, Check, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import type { Upstream } from "../lib/types.ts";
 import { useUpdateUpstream, useDeleteUpstream, useBulkDeleteUpstreams } from "../hooks/useUpstreams.ts";
 
@@ -8,29 +8,158 @@ interface UpstreamsTableProps {
   isLoading: boolean;
 }
 
+function EditUpstreamDialog({ upstream, onClose }: { upstream: Upstream; onClose: () => void }) {
+  const [name, setName] = useState(upstream.name);
+  const [baseUrl, setBaseUrl] = useState(upstream.base_url);
+  const [apiKey, setApiKey] = useState("");
+  const [format, setFormat] = useState(upstream.format);
+  const [priority, setPriority] = useState(String(upstream.priority));
+  const [isActive, setIsActive] = useState(upstream.is_active);
+  const update = useUpdateUpstream();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const data: Record<string, unknown> = {
+      id: upstream.id,
+      name,
+      base_url: baseUrl,
+      format,
+      priority: Number(priority),
+      is_active: isActive,
+    };
+    if (apiKey) {
+      data.api_key = apiKey;
+    }
+    update.mutate(data as Parameters<typeof update.mutate>[0], {
+      onSuccess: () => onClose(),
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="relative bg-zinc-900/95 border border-zinc-800/40 rounded-xl shadow-2xl w-full max-w-md m-4"
+        style={{ animation: "fadeInUp 0.25s ease-out forwards" }}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
+          <h2 className="text-sm font-semibold text-zinc-100">Edit Upstream</h2>
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Base URL</label>
+            <input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              required
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
+              API Key
+            </label>
+            <input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              type="password"
+              placeholder="Leave blank to keep existing"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
+              API Format
+            </label>
+            <select
+              value={format}
+              onChange={(e) => setFormat(e.target.value)}
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-500 transition-colors"
+            >
+              <option value="openai">OpenAI Compatible</option>
+              <option value="anthropic">Native Anthropic</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">
+              Priority
+            </label>
+            <input
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              type="number"
+              min="0"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider">Status</label>
+            <button
+              type="button"
+              onClick={() => setIsActive(!isActive)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                isActive ? "bg-emerald-600" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  isActive ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span className={`text-xs font-medium ${isActive ? "text-emerald-400" : "text-zinc-500"}`}>
+              {isActive ? "Active" : "Inactive"}
+            </span>
+          </div>
+          {update.isError && (
+            <p className="text-xs text-red-400">
+              {update.error?.message ?? "Failed to update upstream"}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 rounded-lg text-zinc-300 font-medium transition-all duration-150"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name || !baseUrl || update.isPending}
+              className="flex-1 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150"
+            >
+              {update.isPending ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editPriority, setEditPriority] = useState("");
+  const [editUpstream, setEditUpstream] = useState<Upstream | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
-  const update = useUpdateUpstream();
   const del = useDeleteUpstream();
   const bulkDel = useBulkDeleteUpstreams();
-
-  function startEdit(u: Upstream) {
-    setEditId(u.id);
-    setEditName(u.name);
-    setEditPriority(String(u.priority));
-  }
-
-  function saveEdit(id: string) {
-    update.mutate(
-      { id, name: editName, priority: Number(editPriority) },
-      { onSuccess: () => setEditId(null) },
-    );
-  }
 
   function handleDelete(id: string) {
     del.mutate(id, { onSettled: () => setConfirmDeleteId(null) });
@@ -160,16 +289,7 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
                     />
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === u.id ? (
-                      <input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        className="w-32 bg-zinc-800/60 border border-zinc-600/50 rounded-lg text-xs text-zinc-200 px-2 py-1 focus:outline-none focus:border-zinc-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="text-xs font-medium text-zinc-200">{u.name}</span>
-                    )}
+                    <span className="text-xs font-medium text-zinc-200">{u.name}</span>
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     <span className="font-mono text-xs text-zinc-500">{u.base_url}</span>
@@ -186,18 +306,7 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === u.id ? (
-                      <input
-                        value={editPriority}
-                        onChange={(e) => setEditPriority(e.target.value)}
-                        type="number"
-                        min="0"
-                        className="w-16 bg-zinc-800/60 border border-zinc-600/50 rounded-lg text-xs text-zinc-200 px-2 py-1 font-mono focus:outline-none focus:border-zinc-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="font-mono text-xs text-zinc-400">{u.priority}</span>
-                    )}
+                    <span className="font-mono text-xs text-zinc-400">{u.priority}</span>
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     {u.is_active ? (
@@ -207,22 +316,7 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
                     )}
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === u.id ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); saveEdit(u.id); }}
-                          className="text-emerald-400 hover:text-emerald-300 transition-colors"
-                        >
-                          <Check size={13} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditId(null); }}
-                          className="text-zinc-600 hover:text-zinc-400 transition-colors"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ) : confirmDeleteId === u.id ? (
+                    {confirmDeleteId === u.id ? (
                       <div className="flex items-center gap-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDelete(u.id); }}
@@ -240,7 +334,7 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={(e) => { e.stopPropagation(); startEdit(u); }}
+                          onClick={(e) => { e.stopPropagation(); setEditUpstream(u); }}
                           className="text-zinc-600 hover:text-zinc-400 transition-colors"
                         >
                           <Pencil size={13} />
@@ -260,6 +354,13 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
           </table>
         </div>
       </div>
+
+      {editUpstream && (
+        <EditUpstreamDialog
+          upstream={editUpstream}
+          onClose={() => setEditUpstream(null)}
+        />
+      )}
     </div>
   );
 }

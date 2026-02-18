@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	json "github.com/bytedance/sonic"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -101,6 +103,12 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 	// Strip unsupported fields (e.g. cache_control.scope) that some
 	// upstreams reject. Cheap no-op when the field isn't present.
 	body = sanitizeAnthropicBody(body)
+	// Strip thinking blocks from conversation history. Thinking blocks
+	// contain cryptographic signatures that are only valid from the
+	// originating API — blocks synthesized during protocol translation
+	// have no valid signature and cause upstream validation errors.
+	// Anthropic re-derives thinking from context, so stripping is safe.
+	body = stripThinkingBlocks(body)
 	overheadUS := int(time.Since(start).Microseconds())
 	upstreamResp, err := client.DoRaw(r.Context(), "POST", "/v1/messages", bytes.NewReader(body), extraHeaders)
 	if err != nil {
@@ -397,8 +405,14 @@ func passthroughAnthropicStream(upstream io.Reader, w http.ResponseWriter, flush
 		line := scanner.Bytes()
 
 		// Pass every line through as-is.
-		w.Write(line)
-		w.Write(newline)
+		if _, err := w.Write(line); err != nil {
+			log.Printf("anthropic stream write error: %v", err)
+			break
+		}
+		if _, err := w.Write(newline); err != nil {
+			log.Printf("anthropic stream write error: %v", err)
+			break
+		}
 
 		// Flush on empty lines (SSE event boundary).
 		if len(line) == 0 {
@@ -433,6 +447,10 @@ func passthroughAnthropicStream(upstream io.Reader, w http.ResponseWriter, flush
 				usage.OutputTokens = msgDelta.Usage.OutputTokens
 			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("anthropic stream read error: %v", err)
 	}
 
 	flusher.Flush()
@@ -477,4 +495,100 @@ func stripCacheControlScope(v interface{}) {
 			stripCacheControlScope(item)
 		}
 	}
+}
+
+// stripThinkingBlocks removes thinking and redacted_thinking content blocks
+// from assistant messages in an Anthropic request body. Thinking blocks carry
+// cryptographic signatures issued by the originating API; blocks synthesized
+// during protocol translation (e.g. from OpenAI reasoning_content) have no
+// valid signature and are rejected by upstream Anthropic APIs. Stripping is
+// safe — the API re-derives thinking from context when blocks are absent.
+func stripThinkingBlocks(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"thinking"`)) {
+		return body
+	}
+
+	var raw map[string]stdjson.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body
+	}
+	messagesRaw, ok := raw["messages"]
+	if !ok {
+		return body
+	}
+
+	var messages []stdjson.RawMessage
+	if err := json.Unmarshal(messagesRaw, &messages); err != nil {
+		return body
+	}
+
+	modified := false
+	for i, msgRaw := range messages {
+		var msg struct {
+			Role    string              `json:"role"`
+			Content stdjson.RawMessage  `json:"content"`
+		}
+		if err := json.Unmarshal(msgRaw, &msg); err != nil || msg.Role != "assistant" {
+			continue
+		}
+
+		// Content may be a string (no thinking blocks possible) or an array.
+		if len(msg.Content) == 0 || msg.Content[0] != '[' {
+			continue
+		}
+
+		var blocks []stdjson.RawMessage
+		if err := json.Unmarshal(msg.Content, &blocks); err != nil {
+			continue
+		}
+
+		filtered := make([]stdjson.RawMessage, 0, len(blocks))
+		for _, blockRaw := range blocks {
+			var peek struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(blockRaw, &peek) == nil &&
+				(peek.Type == "thinking" || peek.Type == "redacted_thinking") {
+				modified = true
+				continue
+			}
+			filtered = append(filtered, blockRaw)
+		}
+
+		if len(filtered) == len(blocks) {
+			continue
+		}
+
+		// Re-assemble the message with filtered content, preserving all
+		// other fields (tool calls, etc.) by patching into the raw map.
+		var msgMap map[string]stdjson.RawMessage
+		if err := json.Unmarshal(msgRaw, &msgMap); err != nil {
+			continue
+		}
+		newContent, err := json.Marshal(filtered)
+		if err != nil {
+			continue
+		}
+		msgMap["content"] = stdjson.RawMessage(newContent)
+		rebuilt, err := json.Marshal(msgMap)
+		if err != nil {
+			continue
+		}
+		messages[i] = stdjson.RawMessage(rebuilt)
+	}
+
+	if !modified {
+		return body
+	}
+
+	newMessages, err := json.Marshal(messages)
+	if err != nil {
+		return body
+	}
+	raw["messages"] = stdjson.RawMessage(newMessages)
+	cleaned, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return cleaned
 }

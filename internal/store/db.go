@@ -4,8 +4,10 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -13,12 +15,20 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+var schemaNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
+
 type Store struct {
-	pool *pgxpool.Pool
+	pool          *pgxpool.Pool
+	encryptionKey []byte // nil = no encryption
 }
 
 func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+// NewWithEncryption creates a Store that encrypts/decrypts upstream API keys.
+func NewWithEncryption(pool *pgxpool.Pool, encryptionKey []byte) *Store {
+	return &Store{pool: pool, encryptionKey: encryptionKey}
 }
 
 func (s *Store) Pool() *pgxpool.Pool {
@@ -96,17 +106,44 @@ func (s *Store) Health(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
-func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+func NewPool(ctx context.Context, databaseURL, databaseSchema string, maxConns, minConns int32) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
-	config.MaxConns = 25
-	config.MinConns = 5
+	schema := strings.TrimSpace(databaseSchema)
+	if schema == "" {
+		schema = "public"
+	}
+	if !schemaNamePattern.MatchString(schema) {
+		return nil, fmt.Errorf("invalid database schema %q", schema)
+	}
+	if maxConns <= 0 {
+		maxConns = 25
+	}
+	if minConns <= 0 {
+		minConns = 5
+	}
+	config.MaxConns = maxConns
+	config.MinConns = minConns
+	config.HealthCheckPeriod = 30 * time.Second
+	config.MaxConnLifetime = 1 * time.Hour
+	if schema == "public" {
+		config.ConnConfig.RuntimeParams["search_path"] = "public"
+	} else {
+		config.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
+	}
+
+	if schema != "public" {
+		if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+schema); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("ensure schema %q: %w", schema, err)
+		}
 	}
 
 	if err := pool.Ping(ctx); err != nil {

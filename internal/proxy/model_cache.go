@@ -21,11 +21,11 @@ type modelCacheEntry struct {
 // a background goroutine refreshes the cache, so the hot path never blocks
 // on a DB round-trip.
 type ModelCache struct {
-	mu          sync.RWMutex
-	items       map[string]*modelCacheEntry // keyed by model name
-	refreshing  map[string]bool             // in-flight background refreshes
-	ttl         time.Duration
-	store       *store.Store
+	mu         sync.RWMutex
+	items      map[string]*modelCacheEntry // keyed by model name
+	refreshing map[string]bool             // in-flight background refreshes
+	ttl        time.Duration
+	store      *store.Store
 }
 
 // NewModelCache creates a model cache with the given TTL.
@@ -100,6 +100,27 @@ func (c *ModelCache) fetchAndCache(ctx context.Context, modelName string) (*stor
 	c.mu.Unlock()
 
 	return mw, nil
+}
+
+// Warm preloads active model->upstream mappings to avoid cold-miss DB latency
+// on first proxied request after startup.
+func (c *ModelCache) Warm(ctx context.Context) error {
+	models, err := c.store.ListActiveModelsWithUpstream(ctx)
+	if err != nil {
+		return err
+	}
+
+	if len(models) == 0 {
+		return nil
+	}
+
+	expires := time.Now().Add(c.ttl)
+	c.mu.Lock()
+	for _, mw := range models {
+		c.items[mw.Name] = &modelCacheEntry{mw: mw, expires: expires}
+	}
+	c.mu.Unlock()
+	return nil
 }
 
 // Invalidate removes all cached entries (e.g. after admin changes models/upstreams).

@@ -3,11 +3,13 @@ package store
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/sertdev/pxbin/internal/crypto"
 )
 
 type Upstream struct {
@@ -39,6 +41,37 @@ type UpstreamUpdate struct {
 	IsActive *bool   `json:"is_active,omitempty"`
 }
 
+// encryptAPIKey encrypts an API key if an encryption key is configured.
+func (s *Store) encryptAPIKey(apiKey string) string {
+	if s.encryptionKey == nil || apiKey == "" {
+		return apiKey
+	}
+	encrypted, err := crypto.Encrypt([]byte(apiKey), s.encryptionKey)
+	if err != nil {
+		log.Printf("warning: failed to encrypt api key: %v", err)
+		return apiKey
+	}
+	return encrypted
+}
+
+// decryptAPIKey decrypts an API key if it's encrypted. Handles legacy
+// plaintext values gracefully.
+func (s *Store) decryptAPIKey(stored string) string {
+	if s.encryptionKey == nil || stored == "" {
+		return stored
+	}
+	if !crypto.IsEncrypted(stored) {
+		log.Printf("warning: upstream api key is not encrypted (legacy plaintext)")
+		return stored
+	}
+	decrypted, err := crypto.Decrypt(stored, s.encryptionKey)
+	if err != nil {
+		log.Printf("warning: failed to decrypt api key: %v", err)
+		return stored
+	}
+	return string(decrypted)
+}
+
 func (s *Store) ListUpstreams(ctx context.Context) ([]Upstream, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, base_url, api_key_encrypted, format, is_active, priority, created_at, updated_at
@@ -58,6 +91,7 @@ func (s *Store) ListUpstreams(ctx context.Context) ([]Upstream, error) {
 		); err != nil {
 			return nil, fmt.Errorf("scan upstream: %w", err)
 		}
+		u.APIKeyEncrypted = s.decryptAPIKey(u.APIKeyEncrypted)
 		upstreams = append(upstreams, u)
 	}
 	return upstreams, rows.Err()
@@ -78,6 +112,7 @@ func (s *Store) GetUpstream(ctx context.Context, id uuid.UUID) (*Upstream, error
 	if err != nil {
 		return nil, fmt.Errorf("get upstream: %w", err)
 	}
+	u.APIKeyEncrypted = s.decryptAPIKey(u.APIKeyEncrypted)
 	return &u, nil
 }
 
@@ -96,31 +131,32 @@ func (s *Store) GetActiveUpstream(ctx context.Context) (*Upstream, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get active upstream: %w", err)
 	}
+	u.APIKeyEncrypted = s.decryptAPIKey(u.APIKeyEncrypted)
 	return &u, nil
 }
 
-// TODO: Encrypt api_key with AES-GCM using app-level secret from config before storing.
 func (s *Store) CreateUpstream(ctx context.Context, uc *UpstreamCreate) (*Upstream, error) {
 	format := uc.Format
 	if format == "" {
 		format = "openai"
 	}
+	encryptedKey := s.encryptAPIKey(uc.APIKey)
 	var u Upstream
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO upstreams (name, base_url, api_key_encrypted, format, priority)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, name, base_url, api_key_encrypted, format, is_active, priority, created_at, updated_at
-	`, uc.Name, uc.BaseURL, uc.APIKey, format, uc.Priority).Scan(
+	`, uc.Name, uc.BaseURL, encryptedKey, format, uc.Priority).Scan(
 		&u.ID, &u.Name, &u.BaseURL, &u.APIKeyEncrypted,
 		&u.Format, &u.IsActive, &u.Priority, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create upstream: %w", err)
 	}
+	u.APIKeyEncrypted = s.decryptAPIKey(u.APIKeyEncrypted)
 	return &u, nil
 }
 
-// TODO: Encrypt api_key with AES-GCM when updating.
 func (s *Store) UpdateUpstream(ctx context.Context, id uuid.UUID, upd *UpstreamUpdate) error {
 	sets := []string{}
 	args := []any{}
@@ -138,7 +174,7 @@ func (s *Store) UpdateUpstream(ctx context.Context, id uuid.UUID, upd *UpstreamU
 	}
 	if upd.APIKey != nil {
 		sets = append(sets, fmt.Sprintf("api_key_encrypted = $%d", argIdx))
-		args = append(args, *upd.APIKey)
+		args = append(args, s.encryptAPIKey(*upd.APIKey))
 		argIdx++
 	}
 	if upd.Format != nil {

@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	json "github.com/bytedance/sonic"
 
@@ -46,6 +49,164 @@ func readBody(r *http.Request) ([]byte, error) {
 		return buf, err
 	}
 	return io.ReadAll(r.Body)
+}
+
+var errModelNotFound = errors.New("missing model field")
+
+const modelProbeLimitBytes = 8 * 1024
+
+var modelJSONField = []byte(`"model"`)
+
+// readModelAndBuildBodyReader reads just enough of a JSON body to extract the
+// "model" field, then returns a reader that replays consumed bytes plus the
+// remaining unread stream. This lets handlers dispatch upstream without first
+// buffering the entire request body.
+func readModelAndBuildBodyReader(body io.Reader, probeLimit int) (string, io.Reader, error) {
+	if probeLimit <= 0 {
+		probeLimit = modelProbeLimitBytes
+	}
+
+	prefix := make([]byte, 0, minInt(1024, probeLimit))
+	chunk := make([]byte, 1024)
+
+	for len(prefix) < probeLimit {
+		toRead := minInt(len(chunk), probeLimit-len(prefix))
+		n, err := body.Read(chunk[:toRead])
+		if n > 0 {
+			prefix = append(prefix, chunk[:n]...)
+			if model, ok := extractJSONStringFieldValue(prefix, modelJSONField); ok {
+				return model, io.MultiReader(bytes.NewReader(prefix), body), nil
+			}
+		}
+		if err == io.EOF {
+			model, modelErr := extractModelWithJSONGet(prefix)
+			if modelErr != nil {
+				return "", nil, modelErr
+			}
+			return model, bytes.NewReader(prefix), nil
+		}
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	rest, err := io.ReadAll(body)
+	if err != nil {
+		return "", nil, err
+	}
+	full := append(prefix, rest...)
+	model, err := extractModelWithJSONGet(full)
+	if err != nil {
+		return "", nil, err
+	}
+	return model, bytes.NewReader(full), nil
+}
+
+func extractModelWithJSONGet(body []byte) (string, error) {
+	modelNode, err := json.Get(body, "model")
+	if err != nil {
+		return "", errModelNotFound
+	}
+	model, err := modelNode.String()
+	if err != nil || model == "" {
+		return "", errModelNotFound
+	}
+	return model, nil
+}
+
+// extractJSONStringFieldValue scans a JSON payload prefix for a string field
+// and returns its value without needing a full parse.
+func extractJSONStringFieldValue(body []byte, field []byte) (string, bool) {
+	pos := 0
+	for {
+		rel := bytes.Index(body[pos:], field)
+		if rel < 0 {
+			return "", false
+		}
+		keyStart := pos + rel
+
+		if !likelyJSONKeyBoundary(body, keyStart) {
+			pos = keyStart + 1
+			continue
+		}
+
+		i := keyStart + len(field)
+		for i < len(body) && isJSONWhitespace(body[i]) {
+			i++
+		}
+		if i >= len(body) {
+			return "", false
+		}
+		if body[i] != ':' {
+			pos = keyStart + 1
+			continue
+		}
+		i++
+		for i < len(body) && isJSONWhitespace(body[i]) {
+			i++
+		}
+		if i >= len(body) {
+			return "", false
+		}
+		if body[i] != '"' {
+			pos = keyStart + 1
+			continue
+		}
+
+		i++
+		valueStart := i
+		sawEscape := false
+		for i < len(body) {
+			switch body[i] {
+			case '\\':
+				sawEscape = true
+				i++
+				if i >= len(body) {
+					return "", false
+				}
+			case '"':
+				if !sawEscape {
+					return string(body[valueStart:i]), true
+				}
+				raw := make([]byte, i-valueStart+2)
+				raw[0] = '"'
+				copy(raw[1:], body[valueStart:i])
+				raw[len(raw)-1] = '"'
+				decoded, err := strconv.Unquote(string(raw))
+				if err != nil {
+					return "", false
+				}
+				return decoded, true
+			}
+			i++
+		}
+		return "", false
+	}
+}
+
+func likelyJSONKeyBoundary(body []byte, keyStart int) bool {
+	if keyStart == 0 {
+		return true
+	}
+	i := keyStart - 1
+	for i >= 0 && isJSONWhitespace(body[i]) {
+		i--
+	}
+	if i < 0 {
+		return true
+	}
+	return body[i] == '{' || body[i] == ','
+}
+
+func isJSONWhitespace(b byte) bool {
+	return b == ' ' || b == '\n' || b == '\r' || b == '\t'
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func writeAnthropicError(w http.ResponseWriter, statusCode int, errType, message string) {

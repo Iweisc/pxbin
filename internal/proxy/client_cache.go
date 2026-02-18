@@ -15,14 +15,16 @@ type cachedClient struct {
 // ClientCache is a thread-safe cache of UpstreamClients keyed by upstream UUID.
 // It prevents creating a new HTTP transport per request.
 type ClientCache struct {
-	mu      sync.RWMutex
-	clients map[uuid.UUID]*cachedClient
+	mu           sync.RWMutex
+	clients      map[uuid.UUID]*cachedClient
+	upstreamOpts *UpstreamOpts
 }
 
-// NewClientCache creates an empty ClientCache.
-func NewClientCache() *ClientCache {
+// NewClientCache creates an empty ClientCache with optional resilience options.
+func NewClientCache(opts *UpstreamOpts) *ClientCache {
 	return &ClientCache{
-		clients: make(map[uuid.UUID]*cachedClient),
+		clients:      make(map[uuid.UUID]*cachedClient),
+		upstreamOpts: opts,
 	}
 }
 
@@ -37,7 +39,7 @@ func (c *ClientCache) Get(id uuid.UUID, baseURL, apiKey string) *UpstreamClient 
 		return cached.client
 	}
 
-	client := NewUpstreamClient(baseURL, apiKey)
+	client := NewUpstreamClient(baseURL, apiKey, c.upstreamOpts)
 
 	c.mu.Lock()
 	c.clients[id] = &cachedClient{

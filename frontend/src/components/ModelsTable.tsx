@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Pencil, Trash2, Check, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import type { Model, Upstream } from "../lib/types.ts";
 import { useUpdateModel, useDeleteModel, useBulkDeleteModels } from "../hooks/useModels.ts";
 
@@ -9,14 +9,167 @@ interface ModelsTableProps {
   upstreams: Upstream[];
 }
 
+function EditModelDialog({ model, upstreams, onClose }: { model: Model; upstreams: Upstream[]; onClose: () => void }) {
+  const [name, setName] = useState(model.name);
+  const [displayName, setDisplayName] = useState(model.display_name ?? "");
+  const [provider, setProvider] = useState(model.provider);
+  const [upstreamId, setUpstreamId] = useState(model.upstream_id ?? "");
+  const [inputCost, setInputCost] = useState(String(model.input_cost_per_million));
+  const [outputCost, setOutputCost] = useState(String(model.output_cost_per_million));
+  const [isActive, setIsActive] = useState(model.is_active);
+  const update = useUpdateModel();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    update.mutate(
+      {
+        id: model.id,
+        name,
+        display_name: displayName || null,
+        provider,
+        upstream_id: upstreamId || null,
+        input_cost_per_million: Number(inputCost),
+        output_cost_per_million: Number(outputCost),
+        is_active: isActive,
+      } as Parameters<typeof update.mutate>[0],
+      { onSuccess: () => onClose() },
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="relative bg-zinc-900/95 border border-zinc-800/40 rounded-xl shadow-2xl w-full max-w-md m-4"
+        style={{ animation: "fadeInUp 0.25s ease-out forwards" }}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
+          <h2 className="text-sm font-semibold text-zinc-100">Edit Model</h2>
+          <button
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Model Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Provider</label>
+              <input
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                required
+                className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Upstream</label>
+              <select
+                value={upstreamId}
+                onChange={(e) => setUpstreamId(e.target.value)}
+                className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 focus:outline-none focus:border-zinc-500 transition-colors"
+              >
+                <option value="">None</option>
+                {upstreams.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Display Name</label>
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Optional display name"
+              className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 transition-colors"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Input $/M</label>
+              <input
+                value={inputCost}
+                onChange={(e) => setInputCost(e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">Output $/M</label>
+              <input
+                value={outputCost}
+                onChange={(e) => setOutputCost(e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="block text-[10px] text-zinc-500 uppercase tracking-wider">Status</label>
+            <button
+              type="button"
+              onClick={() => setIsActive(!isActive)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                isActive ? "bg-emerald-600" : "bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  isActive ? "translate-x-4.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span className={`text-xs font-medium ${isActive ? "text-emerald-400" : "text-zinc-500"}`}>
+              {isActive ? "Active" : "Inactive"}
+            </span>
+          </div>
+          {update.isError && (
+            <p className="text-xs text-red-400">
+              {update.error?.message ?? "Failed to update model"}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 rounded-lg text-zinc-300 font-medium transition-all duration-150"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={update.isPending}
+              className="flex-1 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150"
+            >
+              {update.isPending ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editInputCost, setEditInputCost] = useState("");
-  const [editOutputCost, setEditOutputCost] = useState("");
+  const [editModel, setEditModel] = useState<Model | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
-  const update = useUpdateModel();
   const del = useDeleteModel();
   const bulkDel = useBulkDeleteModels();
 
@@ -27,23 +180,6 @@ export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
     }
     return map;
   }, [upstreams]);
-
-  function startEdit(m: Model) {
-    setEditId(m.id);
-    setEditInputCost(String(m.input_cost_per_million));
-    setEditOutputCost(String(m.output_cost_per_million));
-  }
-
-  function saveEdit(id: string) {
-    update.mutate(
-      {
-        id,
-        input_cost_per_million: Number(editInputCost),
-        output_cost_per_million: Number(editOutputCost),
-      },
-      { onSuccess: () => setEditId(null) },
-    );
-  }
 
   function handleDelete(id: string) {
     del.mutate(id, { onSettled: () => setConfirmDeleteId(null) });
@@ -193,32 +329,10 @@ export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
                     )}
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === m.id ? (
-                      <input
-                        value={editInputCost}
-                        onChange={(e) => setEditInputCost(e.target.value)}
-                        type="number"
-                        step="0.01"
-                        className="w-20 bg-zinc-800/60 border border-zinc-600/50 rounded-lg text-xs text-zinc-200 px-2 py-1 font-mono focus:outline-none focus:border-zinc-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="font-mono text-xs text-zinc-300">${m.input_cost_per_million.toFixed(2)}</span>
-                    )}
+                    <span className="font-mono text-xs text-zinc-300">${m.input_cost_per_million.toFixed(2)}</span>
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === m.id ? (
-                      <input
-                        value={editOutputCost}
-                        onChange={(e) => setEditOutputCost(e.target.value)}
-                        type="number"
-                        step="0.01"
-                        className="w-20 bg-zinc-800/60 border border-zinc-600/50 rounded-lg text-xs text-zinc-200 px-2 py-1 font-mono focus:outline-none focus:border-zinc-500"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className="font-mono text-xs text-zinc-300">${m.output_cost_per_million.toFixed(2)}</span>
-                    )}
+                    <span className="font-mono text-xs text-zinc-300">${m.output_cost_per_million.toFixed(2)}</span>
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     {m.is_active ? (
@@ -228,22 +342,7 @@ export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
                     )}
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {editId === m.id ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); saveEdit(m.id); }}
-                          className="text-emerald-400 hover:text-emerald-300 transition-colors"
-                        >
-                          <Check size={13} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditId(null); }}
-                          className="text-zinc-600 hover:text-zinc-400 transition-colors"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                    ) : confirmDeleteId === m.id ? (
+                    {confirmDeleteId === m.id ? (
                       <div className="flex items-center gap-2">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDelete(m.id); }}
@@ -261,7 +360,7 @@ export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={(e) => { e.stopPropagation(); startEdit(m); }}
+                          onClick={(e) => { e.stopPropagation(); setEditModel(m); }}
                           className="text-zinc-600 hover:text-zinc-400 transition-colors"
                         >
                           <Pencil size={13} />
@@ -281,6 +380,14 @@ export function ModelsTable({ data, isLoading, upstreams }: ModelsTableProps) {
           </table>
         </div>
       </div>
+
+      {editModel && (
+        <EditModelDialog
+          model={editModel}
+          upstreams={upstreams}
+          onClose={() => setEditModel(null)}
+        />
+      )}
     </div>
   );
 }

@@ -15,78 +15,148 @@ import (
 	"github.com/sertdev/pxbin/internal/auth"
 	"github.com/sertdev/pxbin/internal/billing"
 	"github.com/sertdev/pxbin/internal/config"
+	"github.com/sertdev/pxbin/internal/crypto"
 	"github.com/sertdev/pxbin/internal/logging"
+	"github.com/sertdev/pxbin/internal/metrics"
 	"github.com/sertdev/pxbin/internal/proxy"
+	"github.com/sertdev/pxbin/internal/ratelimit"
+	"github.com/sertdev/pxbin/internal/resilience"
 	"github.com/sertdev/pxbin/internal/server"
+	"github.com/sertdev/pxbin/internal/slogger"
 	"github.com/sertdev/pxbin/internal/store"
 )
 
 func main() {
+	// 1. Load config
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	// Initialize database connection pool
-	pool, err := store.NewPool(context.Background(), cfg.DatabaseURL)
+	// 2. Validate config
+	if err := config.Validate(cfg); err != nil {
+		log.Fatalf("config validation failed: %v", err)
+	}
+
+	// 3. Setup structured logging
+	slogger.Setup(cfg.LogFormat)
+
+	// 4. Derive encryption key (if set)
+	var encryptionKey []byte
+	if cfg.EncryptionKey != "" {
+		encryptionKey = crypto.DeriveKey(cfg.EncryptionKey)
+	}
+
+	// 5. Initialize database connection pool with configurable sizes
+	pool, err := store.NewPool(context.Background(), cfg.DatabaseURL, cfg.DatabaseSchema, cfg.MaxDBConns, cfg.MinDBConns)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 	defer pool.Close()
 
-	// Initialize store and run migrations
-	st := store.New(pool)
+	// 6. Initialize store (with encryption if key is set)
+	var st *store.Store
+	if encryptionKey != nil {
+		st = store.NewWithEncryption(pool, encryptionKey)
+	} else {
+		st = store.New(pool)
+	}
+
+	// 7. Run migrations
 	if err := st.Migrate(context.Background()); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	// Initialize billing tracker
+	// 8. Initialize billing tracker
 	billingTracker := billing.NewTracker(st)
 	defer billingTracker.Close()
 
-	// Initialize async logger
+	// 9. Initialize async logger
 	asyncLogger := logging.NewAsyncLogger(st, cfg.LogBufferSize)
 	defer asyncLogger.Close()
 
-	// Initialize log retention cleaner
+	// 10. Initialize log retention cleaner
 	logCleaner := logging.NewLogCleaner(st, cfg.LogRetentionDays)
 	defer logCleaner.Close()
 
-	// Initialize client cache for per-upstream connections
-	clientCache := proxy.NewClientCache()
+	// 11. Initialize metrics (if enabled)
+	var m *metrics.Metrics
+	var metricsMiddleware func(http.Handler) http.Handler
+	var metricsHandler http.Handler
+	if cfg.MetricsEnabled {
+		m = metrics.New()
+		metricsMiddleware = metrics.Middleware(m)
+		metricsHandler = m.Handler()
+		asyncLogger.SetDroppedCounter(m.DroppedLogsTotal)
+	}
 
-	// Initialize model resolution cache (60s TTL — models/upstreams rarely change)
+	// 12. Initialize rate limiter (if configured)
+	var rateLimiter *ratelimit.Limiter
+	if cfg.RateLimitRPS > 0 {
+		burst := cfg.RateLimitBurst
+		if burst <= 0 {
+			burst = int(cfg.RateLimitRPS * 2) // default burst = 2x RPS
+		}
+		rateLimiter = ratelimit.NewLimiter(cfg.RateLimitRPS, burst)
+		defer rateLimiter.Close()
+	}
+
+	// 13. Initialize upstream options (circuit breaker + retry)
+	var upstreamOpts *proxy.UpstreamOpts
+	if cfg.CBFailureThreshold > 0 || cfg.RetryMaxAttempts > 1 {
+		upstreamOpts = &proxy.UpstreamOpts{
+			CBOpts: resilience.CircuitBreakerOpts{
+				Threshold: cfg.CBFailureThreshold,
+				Timeout:   time.Duration(cfg.CBTimeoutSeconds) * time.Second,
+			},
+			RetryOpts: resilience.RetryOpts{
+				MaxAttempts: cfg.RetryMaxAttempts,
+				BaseDelay:   time.Duration(cfg.RetryBaseDelayMS) * time.Millisecond,
+			},
+		}
+	}
+
+	// 14. Initialize client cache with resilience options
+	clientCache := proxy.NewClientCache(upstreamOpts)
+
+	// 15. Initialize model resolution cache (60s TTL)
 	modelCache := proxy.NewModelCache(st, 60*time.Second)
 	if err := modelCache.Warm(context.Background()); err != nil {
 		log.Printf("model cache warmup failed: %v", err)
 	}
 
-	// Initialize proxy handler
+	// 16. Initialize proxy handler
 	proxyHandler := proxy.NewHandler(clientCache, modelCache, st, asyncLogger, billingTracker)
 
-	// Initialize auth key cache and last-used tracker
+	// 17. Initialize auth key cache and last-used tracker
 	keyCache := auth.NewKeyCache(st, 60*time.Second)
 	lastUsedTracker := auth.NewLastUsedTracker(st)
 	defer lastUsedTracker.Close()
 
-	// Initialize auth middleware functions
+	// 18. Initialize auth middleware functions
 	llmAuth := auth.LLMAuthMiddleware(keyCache, lastUsedTracker)
 	mgmtAuth := auth.ManagementAuthMiddleware(st)
 
-	// Initialize management API router
+	// 19. Initialize management API router
 	mgmtRouter := api.NewRouter(st, mgmtAuth, billingTracker)
 
-	// Initialize bootstrap handler (nil if no bootstrap key configured)
+	// 20. Initialize bootstrap handler (nil if no bootstrap key configured)
 	bootstrapHandler := api.NewBootstrapHandler(st, cfg.ManagementBootstrapKey)
 
-	// Strip "frontend/dist" prefix from embedded FS
+	// 21. Strip "frontend/dist" prefix from embedded FS
 	frontendFS, err := fs.Sub(pxbin.FrontendDist, "frontend/dist")
 	if err != nil {
 		log.Fatalf("failed to load embedded frontend: %v", err)
 	}
 
-	// Build the main server router
-	router := server.New(cfg, proxyHandler, llmAuth, mgmtRouter, bootstrapHandler, frontendFS)
+	// 22. Build the main server router with middleware
+	serverOpts := &server.Opts{
+		RateLimiter:       rateLimiter,
+		MetricsMiddleware: metricsMiddleware,
+		MetricsHandler:    metricsHandler,
+		Pool:              pool,
+	}
+	router := server.New(cfg, proxyHandler, llmAuth, mgmtRouter, bootstrapHandler, frontendFS, serverOpts)
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,

@@ -40,10 +40,13 @@ type ModelCreate struct {
 }
 
 type ModelUpdate struct {
-	DisplayName          *string  `json:"display_name,omitempty"`
-	InputCostPerMillion  *float64 `json:"input_cost_per_million,omitempty"`
-	OutputCostPerMillion *float64 `json:"output_cost_per_million,omitempty"`
-	IsActive             *bool    `json:"is_active,omitempty"`
+	Name                 *string    `json:"name,omitempty"`
+	DisplayName          *string    `json:"display_name,omitempty"`
+	Provider             *string    `json:"provider,omitempty"`
+	UpstreamID           *uuid.UUID `json:"upstream_id,omitempty"`
+	InputCostPerMillion  *float64   `json:"input_cost_per_million,omitempty"`
+	OutputCostPerMillion *float64   `json:"output_cost_per_million,omitempty"`
+	IsActive             *bool      `json:"is_active,omitempty"`
 }
 
 func (s *Store) ListModels(ctx context.Context) ([]Model, error) {
@@ -131,9 +134,24 @@ func (s *Store) UpdateModel(ctx context.Context, id uuid.UUID, u *ModelUpdate) e
 	args := []any{}
 	argIdx := 1
 
+	if u.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", argIdx))
+		args = append(args, *u.Name)
+		argIdx++
+	}
 	if u.DisplayName != nil {
 		sets = append(sets, fmt.Sprintf("display_name = $%d", argIdx))
 		args = append(args, *u.DisplayName)
+		argIdx++
+	}
+	if u.Provider != nil {
+		sets = append(sets, fmt.Sprintf("provider = $%d", argIdx))
+		args = append(args, *u.Provider)
+		argIdx++
+	}
+	if u.UpstreamID != nil {
+		sets = append(sets, fmt.Sprintf("upstream_id = $%d", argIdx))
+		args = append(args, *u.UpstreamID)
 		argIdx++
 	}
 	if u.InputCostPerMillion != nil {
@@ -207,5 +225,44 @@ func (s *Store) GetModelWithUpstream(ctx context.Context, modelName string) (*Mo
 	if err != nil {
 		return nil, fmt.Errorf("get model with upstream: %w", err)
 	}
+	mw.UpstreamAPIKey = s.decryptAPIKey(mw.UpstreamAPIKey)
 	return &mw, nil
+}
+
+// ListActiveModelsWithUpstream returns all active models joined with their
+// active upstream configuration.
+func (s *Store) ListActiveModelsWithUpstream(ctx context.Context) ([]*ModelWithUpstream, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.id, m.name, m.display_name, m.provider, m.upstream_id,
+		       m.input_cost_per_million, m.output_cost_per_million,
+		       m.is_active, m.created_at, m.updated_at,
+		       u.base_url, u.api_key_encrypted, u.format
+		FROM models m
+		JOIN upstreams u ON u.id = m.upstream_id
+		WHERE m.is_active = true AND u.is_active = true
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list active models with upstream: %w", err)
+	}
+	defer rows.Close()
+
+	models := make([]*ModelWithUpstream, 0)
+	for rows.Next() {
+		var mw ModelWithUpstream
+		if err := rows.Scan(
+			&mw.ID, &mw.Name, &mw.DisplayName, &mw.Provider, &mw.UpstreamID,
+			&mw.InputCostPerMillion, &mw.OutputCostPerMillion,
+			&mw.IsActive, &mw.CreatedAt, &mw.UpdatedAt,
+			&mw.UpstreamBaseURL, &mw.UpstreamAPIKey, &mw.UpstreamFormat,
+		); err != nil {
+			return nil, fmt.Errorf("scan active model with upstream: %w", err)
+		}
+		mw.UpstreamAPIKey = s.decryptAPIKey(mw.UpstreamAPIKey)
+		models = append(models, &mw)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active models with upstream: %w", err)
+	}
+	return models, nil
 }

@@ -39,6 +39,7 @@ func TestResponsesCompactRoute(t *testing.T) {
 		chi.NewRouter(),
 		nil,
 		nil,
+		nil,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses/compact", strings.NewReader(`{"model":"gpt-5.3-codex"}`))

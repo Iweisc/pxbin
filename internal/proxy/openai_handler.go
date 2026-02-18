@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sertdev/pxbin/internal/auth"
 	"github.com/sertdev/pxbin/internal/logging"
 	"github.com/sertdev/pxbin/internal/translate"
@@ -43,15 +44,13 @@ func (h *Handler) HandleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	start := time.Now()
 	keyID := auth.GetKeyIDFromContext(r.Context())
 
-	body, err := readBody(r)
-	if err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
 	defer r.Body.Close()
 
-	modelNode, _ := json.Get(body, "model")
-	model, _ := modelNode.String()
+	model, upstreamReqBody, err := readModelAndBuildBodyReader(r.Body, modelProbeLimitBytes)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Invalid request body: missing or invalid model")
+		return
+	}
 
 	client, format, err := h.resolveUpstream(r.Context(), model)
 	if err != nil {
@@ -66,7 +65,7 @@ func (h *Handler) HandleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 
 	upstreamPath := responsesUpstreamPath(r.URL.Path)
 	overheadUS := int(time.Since(start).Microseconds())
-	upstreamResp, err := client.Do(r.Context(), r.Method, upstreamPath, bytes.NewReader(body), nil)
+	upstreamResp, err := client.Do(r.Context(), r.Method, upstreamPath, upstreamReqBody, nil)
 	if err != nil {
 		latency := time.Since(start)
 		h.logger.Log(&logging.LogEntry{
@@ -353,16 +352,13 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	keyID := auth.GetKeyIDFromContext(r.Context())
 
-	// Read the request body. Pre-allocates when Content-Length is known.
-	body, err := readBody(r)
-	if err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
 	defer r.Body.Close()
 
-	modelNode, _ := json.Get(body, "model")
-	model, _ := modelNode.String()
+	model, upstreamReqBody, err := readModelAndBuildBodyReader(r.Body, modelProbeLimitBytes)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Invalid request body: missing or invalid model")
+		return
+	}
 
 	// Resolve upstream based on model.
 	client, format, err := h.resolveUpstream(r.Context(), model)
@@ -372,13 +368,24 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if format == "anthropic" {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Model is linked to an Anthropic-format upstream; use the Anthropic endpoint instead")
+		// Translation path: OpenAI → Anthropic — full parse required.
+		body, readErr := io.ReadAll(upstreamReqBody)
+		if readErr != nil {
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+			return
+		}
+		var openaiReq translate.OpenAIRequest
+		if err := json.Unmarshal(body, &openaiReq); err != nil {
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON in request body")
+			return
+		}
+		h.handleOpenAIToAnthropic(w, r, client, &openaiReq, keyID, start)
 		return
 	}
 
 	// Forward the request body to the upstream unchanged.
 	overheadUS := int(time.Since(start).Microseconds())
-	upstreamResp, err := client.Do(r.Context(), r.Method, "/v1/chat/completions", bytes.NewReader(body), nil)
+	upstreamResp, err := client.Do(r.Context(), r.Method, "/v1/chat/completions", upstreamReqBody, nil)
 	if err != nil {
 		latency := time.Since(start)
 		h.logger.Log(&logging.LogEntry{
@@ -518,6 +525,154 @@ func (h *Handler) HandleOpenAI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(upstreamResp.StatusCode)
 	w.Write(upstreamBody)
+}
+
+// handleOpenAIToAnthropic translates an OpenAI request to Anthropic format,
+// sends it to the upstream, and translates the response back.
+func (h *Handler) handleOpenAIToAnthropic(w http.ResponseWriter, r *http.Request, client *UpstreamClient, openaiReq *translate.OpenAIRequest, keyID uuid.UUID, start time.Time) {
+	anthropicReq, err := translate.OpenAIRequestToAnthropic(openaiReq)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "Failed to translate request: "+err.Error())
+		return
+	}
+
+	anthropicBody, err := json.Marshal(anthropicReq)
+	if err != nil {
+		writeOpenAIError(w, http.StatusInternalServerError, "server_error", "Failed to encode translated request")
+		return
+	}
+
+	extraHeaders := http.Header{
+		"X-Api-Key":         {client.apiKey},
+		"Anthropic-Version": {"2023-06-01"},
+	}
+
+	overheadUS := int(time.Since(start).Microseconds())
+	upstreamResp, err := client.DoRaw(r.Context(), "POST", "/v1/messages", bytes.NewReader(anthropicBody), extraHeaders)
+	if err != nil {
+		latency := time.Since(start)
+		h.logger.Log(&logging.LogEntry{
+			KeyID:        keyID,
+			Timestamp:    start,
+			Method:       r.Method,
+			Path:         r.URL.Path,
+			Model:        openaiReq.Model,
+			InputFormat:  "openai",
+			StatusCode:   http.StatusBadGateway,
+			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
+			ErrorMessage: "upstream connection error: " + err.Error(),
+		})
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Failed to connect to upstream")
+		return
+	}
+	defer upstreamResp.Body.Close()
+
+	// Handle upstream errors: translate Anthropic error to OpenAI format.
+	if upstreamResp.StatusCode >= 400 {
+		upstreamBody, _ := io.ReadAll(upstreamResp.Body)
+		latency := time.Since(start)
+		h.logger.Log(&logging.LogEntry{
+			KeyID:        keyID,
+			Timestamp:    start,
+			Method:       r.Method,
+			Path:         r.URL.Path,
+			Model:        openaiReq.Model,
+			InputFormat:  "openai",
+			StatusCode:   upstreamResp.StatusCode,
+			LatencyMS:    int(latency.Milliseconds()),
+			OverheadUS:   overheadUS,
+			ErrorMessage: string(upstreamBody),
+		})
+		oaiErr := translate.TranslateAnthropicErrorToOpenAI(upstreamResp.StatusCode, upstreamBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(upstreamResp.StatusCode)
+		w.Write(oaiErr)
+		return
+	}
+
+	// Streaming translation: Anthropic SSE → OpenAI SSE.
+	if openaiReq.Stream {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeOpenAIError(w, http.StatusInternalServerError, "server_error", "Streaming not supported")
+			return
+		}
+
+		result, _ := translate.TranslateAnthropicStreamToOpenAI(r.Context(), upstreamResp.Body, w, flusher, openaiReq.Model)
+
+		latency := time.Since(start)
+		var inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int
+		if result != nil {
+			inputTokens = result.InputTokens
+			outputTokens = result.OutputTokens
+			cacheCreationTokens = result.CacheCreationTokens
+			cacheReadTokens = result.CacheReadTokens
+		}
+		cost := h.billing.CalculateCost(openaiReq.Model, inputTokens, outputTokens)
+		h.logger.Log(&logging.LogEntry{
+			KeyID:               keyID,
+			Timestamp:           start,
+			Method:              r.Method,
+			Path:                r.URL.Path,
+			Model:               openaiReq.Model,
+			InputFormat:         "openai",
+			StatusCode:          http.StatusOK,
+			LatencyMS:           int(latency.Milliseconds()),
+			OverheadUS:          overheadUS,
+			InputTokens:         inputTokens,
+			OutputTokens:        outputTokens,
+			CacheCreationTokens: cacheCreationTokens,
+			CacheReadTokens:     cacheReadTokens,
+			Cost:                cost,
+		})
+		return
+	}
+
+	// Non-streaming translation: read Anthropic response and translate.
+	upstreamBody, err := io.ReadAll(upstreamResp.Body)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Failed to read upstream response")
+		return
+	}
+
+	var anthropicResp translate.AnthropicResponse
+	if err := json.Unmarshal(upstreamBody, &anthropicResp); err != nil {
+		writeOpenAIError(w, http.StatusBadGateway, "server_error", "Failed to parse upstream response")
+		return
+	}
+
+	oaiResp := translate.AnthropicResponseToOpenAI(&anthropicResp)
+	inputTokens := anthropicResp.Usage.InputTokens
+	outputTokens := anthropicResp.Usage.OutputTokens
+	cacheReadTokens := anthropicResp.Usage.CacheReadInputTokens
+
+	latency := time.Since(start)
+	cost := h.billing.CalculateCost(openaiReq.Model, inputTokens, outputTokens)
+	h.logger.Log(&logging.LogEntry{
+		KeyID:           keyID,
+		Timestamp:       start,
+		Method:          r.Method,
+		Path:            r.URL.Path,
+		Model:           openaiReq.Model,
+		InputFormat:     "openai",
+		StatusCode:      http.StatusOK,
+		LatencyMS:       int(latency.Milliseconds()),
+		OverheadUS:      overheadUS,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+		CacheReadTokens: cacheReadTokens,
+		Cost:            cost,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	b, _ := json.Marshal(oaiResp)
+	w.Write(b)
 }
 
 func normalizeOpenAIInputAndCache(totalInputTokens, cacheReadTokens int) (int, int) {

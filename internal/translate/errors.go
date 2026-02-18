@@ -70,3 +70,44 @@ func mapStatusCode(upstream int) int {
 		return upstream
 	}
 }
+
+// TranslateAnthropicErrorToOpenAI converts an Anthropic error response body
+// into an OpenAI-format error response body.
+func TranslateAnthropicErrorToOpenAI(statusCode int, body []byte) []byte {
+	var anthropicErr AnthropicErrorResponse
+	if err := json.Unmarshal(body, &anthropicErr); err != nil {
+		result, _ := json.Marshal(OpenAIErrorResponse{
+			Error: OpenAIError{
+				Message: string(body),
+				Type:    mapStatusToOpenAIErrorType(statusCode),
+			},
+		})
+		return result
+	}
+
+	result, _ := json.Marshal(OpenAIErrorResponse{
+		Error: OpenAIError{
+			Message: anthropicErr.Error.Message,
+			Type:    mapStatusToOpenAIErrorType(statusCode),
+		},
+	})
+	return result
+}
+
+// mapStatusToOpenAIErrorType maps an HTTP status code to an OpenAI error type.
+func mapStatusToOpenAIErrorType(statusCode int) string {
+	switch statusCode {
+	case 400:
+		return "invalid_request_error"
+	case 401:
+		return "authentication_error"
+	case 403:
+		return "permission_error"
+	case 404:
+		return "not_found_error"
+	case 429:
+		return "rate_limit_error"
+	default:
+		return "server_error"
+	}
+}

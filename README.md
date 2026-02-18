@@ -22,7 +22,7 @@ Built for use cases like Claude Code talking to OpenAI-compatible upstreams — 
 ### Prerequisites
 
 - Go 1.23+
-- PostgreSQL 18
+- PostgreSQL 17
 - Node.js (for frontend development)
 
 ### 1. Start PostgreSQL
@@ -39,6 +39,7 @@ Create a `config.yaml` or use environment variables (`PXBIN_` prefix):
 # config.yaml
 listen_addr: ":8080"
 database_url: "postgres://pxbin:pxbin@localhost:5432/pxbin?sslmode=disable"
+database_schema: "public"  # set to a dedicated schema when sharing a PG cluster
 management_bootstrap_key: ""  # set via PXBIN_MANAGEMENT_BOOTSTRAP_KEY env var
 cors_origins:
   - "http://localhost:5173"
@@ -158,12 +159,24 @@ All require a `pxm_*` management key.
 |-------|---------|---------|-------------|
 | `listen_addr` | `PXBIN_LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `database_url` | `PXBIN_DATABASE_URL` | — | PostgreSQL connection string |
+| `database_schema` | `PXBIN_DATABASE_SCHEMA` | `public` | Schema used for all pxbin tables/migrations |
 | `log_buffer_size` | `PXBIN_LOG_BUFFER_SIZE` | `10000` | Async log buffer capacity |
 | `management_bootstrap_key` | `PXBIN_MANAGEMENT_BOOTSTRAP_KEY` | — | Bootstrap key for initial setup |
 | `cors_origins` | `PXBIN_CORS_ORIGINS` | — | Comma-separated allowed origins |
 | `encryption_key` | `PXBIN_ENCRYPTION_KEY` | — | AES-256 key for upstream API key encryption |
 
 Upstream providers and their API keys are managed exclusively through the management API and stored in the database.
+
+### Running On A Shared PG17 Cluster
+
+If pxbin shares a production PostgreSQL cluster with other apps, set a dedicated schema so pxbin migrations and unique constraints stay isolated:
+
+```bash
+export PXBIN_DATABASE_URL="postgres://user:pass@pg-primary,pg-replica/appdb?sslmode=require&target_session_attrs=read-write"
+export PXBIN_DATABASE_SCHEMA="pxbin"
+```
+
+The pxbin role must be able to use (or create) the configured schema.
 
 ## Frontend
 
@@ -194,7 +207,7 @@ make frontend-build  # Production frontend build
 docker compose up
 ```
 
-Starts pxbin and PostgreSQL 18. The backend is available on `:8080`.
+Starts pxbin and PostgreSQL 17. The backend is available on `:8080`.
 
 ## Architecture
 
