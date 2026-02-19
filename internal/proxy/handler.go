@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -37,18 +38,34 @@ func NewHandler(clients *ClientCache, modelCache *ModelCache, s *store.Store, lo
 	}
 }
 
+// maxRequestBodySize is the maximum allowed request body size (32 MB).
+// Claude Code payloads with large system prompts and tools can reach ~1 MB;
+// 32 MB provides generous headroom while preventing OOM from malicious input.
+const maxRequestBodySize = 32 << 20 // 32 MB
+
 // readBody reads the full request body. When Content-Length is known it
 // pre-allocates a single buffer of the exact size, avoiding the repeated
 // grow-and-copy cycles that io.ReadAll performs (which start at 512 bytes
 // and double each time — ~20 allocs + 2x body size in wasted copies for
-// a 500KB Claude Code payload).
+// a 500KB Claude Code payload). The body is capped at maxRequestBodySize.
 func readBody(r *http.Request) ([]byte, error) {
+	if r.ContentLength > maxRequestBodySize {
+		return nil, fmt.Errorf("request body too large: %d bytes exceeds %d byte limit", r.ContentLength, maxRequestBodySize)
+	}
+	limited := io.LimitReader(r.Body, maxRequestBodySize+1)
 	if r.ContentLength > 0 {
 		buf := make([]byte, r.ContentLength)
-		_, err := io.ReadFull(r.Body, buf)
+		_, err := io.ReadFull(limited, buf)
 		return buf, err
 	}
-	return io.ReadAll(r.Body)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxRequestBodySize {
+		return nil, fmt.Errorf("request body too large: exceeds %d byte limit", maxRequestBodySize)
+	}
+	return data, nil
 }
 
 var errModelNotFound = errors.New("missing model field")

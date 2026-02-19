@@ -45,6 +45,7 @@ func NewRouter(s *store.Store, authMw func(http.Handler) http.Handler, bt *billi
 			r.Get("/", h.List)
 			r.Post("/", h.Create)
 			r.Post("/bulk-delete", h.BulkDelete)
+			r.Post("/health-check", h.HealthCheck)
 			r.Patch("/{id}", h.Update)
 			r.Delete("/{id}", h.Delete)
 		})

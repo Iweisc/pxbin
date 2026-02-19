@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Activity, Check, Loader2 } from "lucide-react";
 import { ProtectedRoute } from "../lib/auth.tsx";
 import { UpstreamsTable } from "../components/UpstreamsTable.tsx";
-import { useUpstreams, useCreateUpstream } from "../hooks/useUpstreams.ts";
+import { useUpstreams, useCreateUpstream, useHealthCheckUpstream } from "../hooks/useUpstreams.ts";
+import type { HealthCheckResult } from "../lib/types.ts";
 
 export function UpstreamsPage() {
   const [showCreate, setShowCreate] = useState(false);
@@ -42,6 +43,8 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
   const [format, setFormat] = useState("openai");
   const [priority, setPriority] = useState("0");
   const create = useCreateUpstream();
+  const healthCheck = useHealthCheckUpstream();
+  const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +57,14 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
         priority: Number(priority),
       },
       { onSuccess: () => onClose() },
+    );
+  }
+
+  function handleTestConnection() {
+    setHealthResult(null);
+    healthCheck.mutate(
+      { base_url: baseUrl, api_key: apiKey, format },
+      { onSuccess: (data) => setHealthResult(data) },
     );
   }
 
@@ -134,18 +145,56 @@ function CreateUpstreamDialog({ onClose }: { onClose: () => void }) {
               className="w-full bg-zinc-800/60 border border-zinc-700/50 rounded-lg text-sm text-zinc-200 px-3 py-2 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 font-mono transition-colors"
             />
           </div>
+          {healthResult && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+              healthResult.healthy
+                ? "bg-emerald-950/40 border border-emerald-800/30"
+                : "bg-red-950/40 border border-red-800/30"
+            }`}>
+              {healthResult.healthy ? (
+                <>
+                  <Check size={13} className="text-emerald-400 shrink-0" />
+                  <span className="text-emerald-300">
+                    Healthy — {healthResult.models_found} models, tested <span className="font-mono">{healthResult.tested_model}</span> in {healthResult.latency_ms}ms
+                  </span>
+                </>
+              ) : (
+                <span className="text-red-300">{healthResult.error ?? "Health check failed"}</span>
+              )}
+            </div>
+          )}
+          {healthCheck.isError && (
+            <p className="text-xs text-red-400">
+              {healthCheck.error?.message ?? "Health check request failed"}
+            </p>
+          )}
           {create.isError && (
             <p className="text-xs text-red-400">
               {create.error?.message ?? "Failed to create upstream"}
             </p>
           )}
-          <button
-            type="submit"
-            disabled={!name || !baseUrl || !apiKey || create.isPending}
-            className="w-full py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150"
-          >
-            {create.isPending ? "Creating..." : "Create Upstream"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={!baseUrl || !apiKey || healthCheck.isPending}
+              className="flex items-center justify-center gap-1.5 flex-1 py-2 text-xs bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/50 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-zinc-300 font-medium transition-all duration-150"
+            >
+              {healthCheck.isPending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Activity size={13} />
+              )}
+              {healthCheck.isPending ? "Testing..." : "Test Connection"}
+            </button>
+            <button
+              type="submit"
+              disabled={!name || !baseUrl || !apiKey || create.isPending}
+              className="flex-1 py-2 text-xs bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-white font-medium transition-all duration-150"
+            >
+              {create.isPending ? "Creating..." : "Create Upstream"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

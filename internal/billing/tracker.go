@@ -18,6 +18,7 @@ type Tracker struct {
 	store   *store.Store
 	mu      sync.RWMutex
 	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 func NewTracker(s *store.Store) *Tracker {
@@ -34,6 +35,7 @@ func NewTracker(s *store.Store) *Tracker {
 	_ = t.RefreshPricing(ctx)
 
 	// Start periodic refresh
+	t.wg.Add(1)
 	go t.refreshLoop()
 	return t
 }
@@ -67,6 +69,7 @@ func (t *Tracker) RefreshPricing(ctx context.Context) error {
 }
 
 func (t *Tracker) refreshLoop() {
+	defer t.wg.Done()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -83,6 +86,7 @@ func (t *Tracker) refreshLoop() {
 
 func (t *Tracker) Close() {
 	close(t.done)
+	t.wg.Wait()
 }
 
 func (t *Tracker) loadDefaults() {

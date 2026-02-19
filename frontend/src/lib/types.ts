@@ -185,5 +185,13 @@ export interface ImportModelsResponse {
   models_skipped: number;
 }
 
+export interface HealthCheckResult {
+  healthy: boolean;
+  models_found: number;
+  tested_model: string;
+  latency_ms: number;
+  error: string | null;
+}
+
 export type Period = "24h" | "7d" | "30d";
 export type Interval = "5m" | "1h" | "1d";

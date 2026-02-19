@@ -165,6 +165,9 @@ func translateUserMessage(msg AnthropicMessage) ([]OpenAIMessage, error) {
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
+			if strings.TrimSpace(b.Text) == "" {
+				continue
+			}
 			contentParts = append(contentParts, OpenAIContentPart{
 				Type: "text",
 				Text: b.Text,
@@ -277,6 +280,9 @@ func translateAssistantMessage(msg AnthropicMessage) ([]OpenAIMessage, error) {
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
+			if strings.TrimSpace(b.Text) == "" {
+				continue
+			}
 			textParts = append(textParts, b.Text)
 		case "tool_use":
 			args, err := marshalToolInput(b.Input)

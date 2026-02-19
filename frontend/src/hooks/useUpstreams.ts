@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../lib/api.ts";
-import type { Upstream, CreateUpstreamRequest } from "../lib/types.ts";
+import type { Upstream, CreateUpstreamRequest, HealthCheckResult } from "../lib/types.ts";
 
 const STALE_TIME = 30_000;
 
@@ -63,5 +63,15 @@ export function useBulkDeleteUpstreams() {
       qc.invalidateQueries({ queryKey: ["upstreams"] });
       qc.invalidateQueries({ queryKey: ["models"] });
     },
+  });
+}
+
+export function useHealthCheckUpstream() {
+  return useMutation({
+    mutationFn: (data: { upstream_id?: string; base_url?: string; api_key?: string; format?: string }) =>
+      apiFetch<HealthCheckResult>("/upstreams/health-check", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   });
 }

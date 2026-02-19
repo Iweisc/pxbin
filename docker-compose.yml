@@ -23,7 +23,8 @@ services:
       - "8080:8080"
     environment:
       PXBIN_DATABASE_URL: "postgres://pxbin:pxbin@postgres:5432/pxbin?sslmode=disable"
-      PXBIN_DATABASE_SCHEMA: "pxbin"
+      PXBIN_DATABASE_SCHEMA: "public"
+      PXBIN_MANAGEMENT_BOOTSTRAP_KEY: "${PXBIN_MANAGEMENT_BOOTSTRAP_KEY:?Set PXBIN_MANAGEMENT_BOOTSTRAP_KEY in your environment}"
     depends_on:
       postgres:
         condition: service_healthy

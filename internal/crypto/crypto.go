@@ -4,16 +4,24 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
+
+	"golang.org/x/crypto/argon2"
 )
 
-// DeriveKey returns a 32-byte AES-256 key from a passphrase using SHA-256.
+// deriveKeySalt is a fixed salt for key derivation. Using a fixed salt is
+// acceptable here because we are deriving a single encryption key from a
+// server-level passphrase (not hashing user passwords). The passphrase
+// has high entropy (config requires >= 16 chars) and there is only one
+// derived key per deployment, so rainbow tables are not a concern.
+var deriveKeySalt = []byte("pxbin-encryption-key-v1")
+
+// DeriveKey returns a 32-byte AES-256 key from a passphrase using Argon2id.
+// Argon2id is memory-hard, making GPU/ASIC brute-force attacks expensive.
 func DeriveKey(passphrase string) []byte {
-	h := sha256.Sum256([]byte(passphrase))
-	return h[:]
+	return argon2.IDKey([]byte(passphrase), deriveKeySalt, 1, 64*1024, 4, 32)
 }
 
 // Encrypt encrypts plaintext with AES-256-GCM. A random 12-byte nonce is

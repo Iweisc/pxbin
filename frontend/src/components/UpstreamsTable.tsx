@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Pencil, Trash2, X } from "lucide-react";
-import type { Upstream } from "../lib/types.ts";
-import { useUpdateUpstream, useDeleteUpstream, useBulkDeleteUpstreams } from "../hooks/useUpstreams.ts";
+import { Pencil, Trash2, X, Activity, Check, Loader2 } from "lucide-react";
+import type { Upstream, HealthCheckResult } from "../lib/types.ts";
+import { useUpdateUpstream, useDeleteUpstream, useBulkDeleteUpstreams, useHealthCheckUpstream } from "../hooks/useUpstreams.ts";
 
 interface UpstreamsTableProps {
   data: Upstream[];
@@ -158,11 +158,55 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
+  const [healthResults, setHealthResults] = useState<Record<string, HealthCheckResult>>({});
+  const [healthChecking, setHealthChecking] = useState<Set<string>>(new Set());
+  const [bulkHealthChecking, setBulkHealthChecking] = useState(false);
   const del = useDeleteUpstream();
   const bulkDel = useBulkDeleteUpstreams();
+  const healthCheck = useHealthCheckUpstream();
 
   function handleDelete(id: string) {
     del.mutate(id, { onSettled: () => setConfirmDeleteId(null) });
+  }
+
+  function handleHealthCheck(id: string) {
+    setHealthChecking((prev) => new Set(prev).add(id));
+    healthCheck.mutate(
+      { upstream_id: id },
+      {
+        onSuccess: (result) => {
+          setHealthResults((prev) => ({ ...prev, [id]: result }));
+        },
+        onSettled: () => {
+          setHealthChecking((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        },
+      },
+    );
+  }
+
+  async function handleBulkHealthCheck() {
+    setBulkHealthChecking(true);
+    const ids = [...selected];
+    for (const id of ids) {
+      setHealthChecking((prev) => new Set(prev).add(id));
+      try {
+        const result = await healthCheck.mutateAsync({ upstream_id: id });
+        setHealthResults((prev) => ({ ...prev, [id]: result }));
+      } catch {
+        // individual failure is shown via missing result
+      } finally {
+        setHealthChecking((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+    setBulkHealthChecking(false);
   }
 
   function toggleSelect(id: string) {
@@ -237,13 +281,23 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setConfirmBulk(true)}
-              className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
-            >
-              <Trash2 size={11} />
-              Delete Selected
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleBulkHealthCheck}
+                disabled={bulkHealthChecking}
+                className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-zinc-200 font-medium transition-colors disabled:opacity-40"
+              >
+                {bulkHealthChecking ? <Loader2 size={11} className="animate-spin" /> : <Activity size={11} />}
+                {bulkHealthChecking ? "Checking..." : "Check Health"}
+              </button>
+              <button
+                onClick={() => setConfirmBulk(true)}
+                className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
+              >
+                <Trash2 size={11} />
+                Delete Selected
+              </button>
+            </div>
           )}
           <button
             onClick={() => setSelected(new Set())}
@@ -333,6 +387,31 @@ export function UpstreamsTable({ data, isLoading }: UpstreamsTableProps) {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
+                        {healthChecking.has(u.id) ? (
+                          <Loader2 size={13} className="text-zinc-500 animate-spin" />
+                        ) : healthResults[u.id] ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleHealthCheck(u.id); }}
+                            className="relative group"
+                            title={healthResults[u.id].healthy
+                              ? `Healthy — ${healthResults[u.id].models_found} models, ${healthResults[u.id].tested_model} (${healthResults[u.id].latency_ms}ms)`
+                              : healthResults[u.id].error ?? "Unhealthy"}
+                          >
+                            {healthResults[u.id].healthy ? (
+                              <Check size={13} className="text-emerald-400" />
+                            ) : (
+                              <Activity size={13} className="text-red-400" />
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleHealthCheck(u.id); }}
+                            className="text-zinc-600 hover:text-zinc-400 transition-colors"
+                            title="Check health"
+                          >
+                            <Activity size={13} />
+                          </button>
+                        )}
                         <button
                           onClick={(e) => { e.stopPropagation(); setEditUpstream(u); }}
                           className="text-zinc-600 hover:text-zinc-400 transition-colors"

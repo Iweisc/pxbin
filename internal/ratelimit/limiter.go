@@ -67,12 +67,18 @@ func (l *Limiter) Allow(key string) bool {
 			break
 		}
 		if b.lastRefill.CompareAndSwap(oldRefill, now) {
-			oldTokens := b.tokens.Load()
-			desired := oldTokens + newTokens
-			if desired > int64(l.burst) {
-				desired = int64(l.burst)
+			// Use CAS loop to add tokens atomically, avoiding overwriting
+			// concurrent decrements from the consume path.
+			for {
+				oldTokens := b.tokens.Load()
+				desired := oldTokens + newTokens
+				if desired > int64(l.burst) {
+					desired = int64(l.burst)
+				}
+				if b.tokens.CompareAndSwap(oldTokens, desired) {
+					break
+				}
 			}
-			b.tokens.Store(desired)
 			break
 		}
 	}

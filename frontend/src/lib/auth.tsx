@@ -5,7 +5,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Navigate } from "@tanstack/react-router";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -45,11 +45,9 @@ export function useAuth(): AuthContextValue {
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
-  const navigate = useNavigate();
 
   if (!isAuthenticated) {
-    navigate({ to: "/login" });
-    return null;
+    return <Navigate to="/login" />;
   }
 
   return <>{children}</>;

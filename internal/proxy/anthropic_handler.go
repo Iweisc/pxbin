@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,20 +19,31 @@ import (
 	"github.com/sertdev/pxbin/internal/translate"
 )
 
+// upstreamInfo contains the resolved upstream client and metadata.
+type upstreamInfo struct {
+	client *UpstreamClient
+	format string
+	id     uuid.UUID
+}
+
 // resolveUpstream looks up the model's linked upstream from the DB. If found,
 // it returns a cached UpstreamClient and the upstream's format. If the model
 // has no linked upstream, it returns an error — all upstreams must be
 // configured via the management API.
-func (h *Handler) resolveUpstream(ctx context.Context, modelName string) (*UpstreamClient, string, error) {
+func (h *Handler) resolveUpstream(ctx context.Context, modelName string) (*upstreamInfo, error) {
 	mw, err := h.modelCache.GetModelWithUpstream(ctx, modelName)
 	if err != nil {
-		return nil, "", fmt.Errorf("resolve upstream: %w", err)
+		return nil, fmt.Errorf("resolve upstream: %w", err)
 	}
 	if mw == nil {
-		return nil, "", fmt.Errorf("no upstream configured for model %q", modelName)
+		return nil, fmt.Errorf("no upstream configured for model %q", modelName)
 	}
 	client := h.clients.Get(*mw.UpstreamID, mw.UpstreamBaseURL, mw.UpstreamAPIKey)
-	return client, mw.UpstreamFormat, nil
+	return &upstreamInfo{
+		client: client,
+		format: mw.UpstreamFormat,
+		id:     *mw.UpstreamID,
+	}, nil
 }
 
 // HandleAnthropic proxies Anthropic /v1/messages requests. Depending on the
@@ -57,23 +69,23 @@ func (h *Handler) HandleAnthropic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve which upstream to use based on the model.
-	client, format, err := h.resolveUpstream(r.Context(), model)
+	upstream, err := h.resolveUpstream(r.Context(), model)
 	if err != nil {
 		writeAnthropicError(w, http.StatusInternalServerError, "api_error", "Failed to resolve upstream")
 		return
 	}
 
-	if format == "openai" {
+	if upstream.format == "openai" {
 		// Translation path — full parse required.
 		var anthropicReq translate.AnthropicRequest
 		if err := json.Unmarshal(body, &anthropicReq); err != nil {
 			writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "Invalid JSON in request body")
 			return
 		}
-		h.handleAnthropicToOpenAI(w, r, client, body, &anthropicReq, keyID, start)
+		h.handleAnthropicToOpenAI(w, r, upstream, body, &anthropicReq, keyID, start)
 	} else {
 		// Native passthrough — no full parse needed.
-		h.handleAnthropicNative(w, r, client, body, model, stream, keyID, start)
+		h.handleAnthropicNative(w, r, upstream, body, model, stream, keyID, start)
 	}
 }
 
@@ -95,14 +107,18 @@ func extractModelAndStream(body []byte) (string, bool, error) {
 
 // handleAnthropicNative passes the request through to an Anthropic-format
 // upstream using x-api-key auth.
-func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, client *UpstreamClient, body []byte, model string, stream bool, keyID uuid.UUID, start time.Time) {
+func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, upstream *upstreamInfo, body []byte, model string, stream bool, keyID uuid.UUID, start time.Time) {
+	upstreamID := &upstream.id
 	extraHeaders := http.Header{
-		"X-Api-Key":         {client.apiKey},
+		"X-Api-Key":         {upstream.client.apiKey},
 		"Anthropic-Version": {"2023-06-01"},
 	}
 	// Strip unsupported fields (e.g. cache_control.scope) that some
 	// upstreams reject. Cheap no-op when the field isn't present.
 	body = sanitizeAnthropicBody(body)
+	// Strip empty text content blocks that some clients (e.g. Claude Code)
+	// include. Anthropic's API rejects text blocks with empty/whitespace text.
+	body = stripEmptyTextBlocks(body)
 	// Strip thinking blocks from conversation history. Thinking blocks
 	// contain cryptographic signatures that are only valid from the
 	// originating API — blocks synthesized during protocol translation
@@ -110,7 +126,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 	// Anthropic re-derives thinking from context, so stripping is safe.
 	body = stripThinkingBlocks(body)
 	overheadUS := int(time.Since(start).Microseconds())
-	upstreamResp, err := client.DoRaw(r.Context(), "POST", "/v1/messages", bytes.NewReader(body), extraHeaders)
+	upstreamResp, err := upstream.client.DoRaw(r.Context(), "POST", "/v1/messages", bytes.NewReader(body), extraHeaders)
 	if err != nil {
 		latency := time.Since(start)
 		h.logger.Log(&logging.LogEntry{
@@ -120,6 +136,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Path:         r.URL.Path,
 			Model:        model,
 			InputFormat:  "anthropic",
+			UpstreamID:   upstreamID,
 			StatusCode:   http.StatusBadGateway,
 			LatencyMS:    int(latency.Milliseconds()),
 			OverheadUS:   overheadUS,
@@ -142,6 +159,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Path:         r.URL.Path,
 			Model:        model,
 			InputFormat:  "anthropic",
+			UpstreamID:   upstreamID,
 			StatusCode:   upstreamResp.StatusCode,
 			LatencyMS:    int(latency.Milliseconds()),
 			OverheadUS:   overheadUS,
@@ -177,6 +195,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Path:                r.URL.Path,
 			Model:               model,
 			InputFormat:         "anthropic",
+			UpstreamID:          upstreamID,
 			StatusCode:          http.StatusOK,
 			LatencyMS:           int(latency.Milliseconds()),
 			OverheadUS:          overheadUS,
@@ -212,6 +231,7 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 			Path:                r.URL.Path,
 			Model:               model,
 			InputFormat:         "anthropic",
+			UpstreamID:          upstreamID,
 			StatusCode:          http.StatusOK,
 			LatencyMS:           int(latency.Milliseconds()),
 			OverheadUS:          overheadUS,
@@ -230,7 +250,8 @@ func (h *Handler) handleAnthropicNative(w http.ResponseWriter, r *http.Request, 
 
 // handleAnthropicToOpenAI translates an Anthropic request to OpenAI format,
 // sends it to the upstream, and translates the response back.
-func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request, client *UpstreamClient, body []byte, anthropicReq *translate.AnthropicRequest, keyID uuid.UUID, start time.Time) {
+func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request, upstream *upstreamInfo, body []byte, anthropicReq *translate.AnthropicRequest, keyID uuid.UUID, start time.Time) {
+	upstreamID := &upstream.id
 	openaiReq, err := translate.AnthropicRequestToOpenAI(anthropicReq)
 	if err != nil {
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "Failed to translate request: "+err.Error())
@@ -244,7 +265,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 	}
 
 	overheadUS := int(time.Since(start).Microseconds())
-	upstreamResp, err := client.Do(r.Context(), "POST", "/v1/chat/completions", bytes.NewReader(openaiBody), nil)
+	upstreamResp, err := upstream.client.Do(r.Context(), "POST", "/v1/chat/completions", bytes.NewReader(openaiBody), nil)
 	if err != nil {
 		latency := time.Since(start)
 		h.logger.Log(&logging.LogEntry{
@@ -254,6 +275,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			Path:         r.URL.Path,
 			Model:        anthropicReq.Model,
 			InputFormat:  "anthropic",
+			UpstreamID:   upstreamID,
 			StatusCode:   http.StatusBadGateway,
 			LatencyMS:    int(latency.Milliseconds()),
 			OverheadUS:   overheadUS,
@@ -275,6 +297,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			Path:         r.URL.Path,
 			Model:        anthropicReq.Model,
 			InputFormat:  "anthropic",
+			UpstreamID:   upstreamID,
 			StatusCode:   upstreamResp.StatusCode,
 			LatencyMS:    int(latency.Milliseconds()),
 			OverheadUS:   overheadUS,
@@ -317,6 +340,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 			Path:                r.URL.Path,
 			Model:               anthropicReq.Model,
 			InputFormat:         "anthropic",
+			UpstreamID:          upstreamID,
 			StatusCode:          http.StatusOK,
 			LatencyMS:           int(latency.Milliseconds()),
 			OverheadUS:          overheadUS,
@@ -368,6 +392,7 @@ func (h *Handler) handleAnthropicToOpenAI(w http.ResponseWriter, r *http.Request
 		Path:            r.URL.Path,
 		Model:           anthropicReq.Model,
 		InputFormat:     "anthropic",
+		UpstreamID:      upstreamID,
 		StatusCode:      http.StatusOK,
 		LatencyMS:       int(latency.Milliseconds()),
 		OverheadUS:      overheadUS,
@@ -495,6 +520,99 @@ func stripCacheControlScope(v interface{}) {
 			stripCacheControlScope(item)
 		}
 	}
+}
+
+// stripEmptyTextBlocks removes text content blocks with empty or whitespace-only
+// text from messages. Some clients (e.g. Claude Code) send empty text blocks
+// that Anthropic's API rejects with a ValidationException. Returns the body
+// unchanged when no "text" blocks are present — the bytes.Contains check makes
+// this a no-op for the vast majority of requests.
+func stripEmptyTextBlocks(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"text"`)) {
+		return body
+	}
+
+	var raw map[string]stdjson.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return body
+	}
+	messagesRaw, ok := raw["messages"]
+	if !ok {
+		return body
+	}
+
+	var messages []stdjson.RawMessage
+	if err := json.Unmarshal(messagesRaw, &messages); err != nil {
+		return body
+	}
+
+	modified := false
+	for i, msgRaw := range messages {
+		var msg struct {
+			Content stdjson.RawMessage `json:"content"`
+		}
+		if err := json.Unmarshal(msgRaw, &msg); err != nil {
+			continue
+		}
+		// Content may be a string (no blocks to filter) or an array.
+		if len(msg.Content) == 0 || msg.Content[0] != '[' {
+			continue
+		}
+
+		var blocks []stdjson.RawMessage
+		if err := json.Unmarshal(msg.Content, &blocks); err != nil {
+			continue
+		}
+
+		filtered := make([]stdjson.RawMessage, 0, len(blocks))
+		for _, blockRaw := range blocks {
+			var peek struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(blockRaw, &peek) == nil &&
+				peek.Type == "text" && strings.TrimSpace(peek.Text) == "" {
+				modified = true
+				continue
+			}
+			filtered = append(filtered, blockRaw)
+		}
+
+		if len(filtered) == len(blocks) {
+			continue
+		}
+
+		// Re-assemble the message with filtered content.
+		var msgMap map[string]stdjson.RawMessage
+		if err := json.Unmarshal(msgRaw, &msgMap); err != nil {
+			continue
+		}
+		newContent, err := json.Marshal(filtered)
+		if err != nil {
+			continue
+		}
+		msgMap["content"] = stdjson.RawMessage(newContent)
+		rebuilt, err := json.Marshal(msgMap)
+		if err != nil {
+			continue
+		}
+		messages[i] = stdjson.RawMessage(rebuilt)
+	}
+
+	if !modified {
+		return body
+	}
+
+	newMessages, err := json.Marshal(messages)
+	if err != nil {
+		return body
+	}
+	raw["messages"] = stdjson.RawMessage(newMessages)
+	cleaned, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return cleaned
 }
 
 // stripThinkingBlocks removes thinking and redacted_thinking content blocks

@@ -46,7 +46,11 @@ func Load() (*Config, error) {
 		LogFormat:          "json",
 	}
 
-	data, err := os.ReadFile("config.yaml")
+	configPath := os.Getenv("PXBIN_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
+	data, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}

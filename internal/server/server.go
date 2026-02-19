@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sertdev/pxbin/internal/auth"
 	"github.com/sertdev/pxbin/internal/config"
 	"github.com/sertdev/pxbin/internal/ratelimit"
 )
@@ -113,13 +114,10 @@ func requestID(next http.Handler) http.Handler {
 func rateLimitMiddleware(limiter *ratelimit.Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use the request's X-Request-ID header as a fallback key, but
-			// prefer the authenticated key ID from context if available.
-			key := r.Header.Get("X-Api-Key")
-			if key == "" {
-				key = r.Header.Get("Authorization")
-			}
-			if key == "" {
+			// Use the authenticated key ID from context (set by auth middleware
+			// which runs before this). Falls back to RemoteAddr for safety.
+			key := auth.GetKeyIDFromContext(r.Context()).String()
+			if key == uuid.Nil.String() {
 				key = r.RemoteAddr
 			}
 
